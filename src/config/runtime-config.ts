@@ -1,6 +1,6 @@
 import type { RuntimeConfig } from "../domain/types";
 
-const DEFAULT_BASE_URL = "http://192.168.10.13:1234/v1";
+const DEFAULT_BASE_URL = "http://localhost:1234/v1";
 const DEFAULT_API_KEY = "lmstudio";
 const DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-mlx";
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
