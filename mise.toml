@@ -1,2 +1,8 @@
 [tools]
 bun = "1.3.10"
+
+[env]
+OPENAI_BASE_URL = "http://127.0.0.1:1234/v1"
+OPENAI_API_KEY = "lmstudio"
+OPENAI_MODEL = "qwen2.5-coder-7b-instruct-mlx"
+# SYSTEM_PROMPT = ""
