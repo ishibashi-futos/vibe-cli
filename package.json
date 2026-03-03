@@ -1,6 +1,6 @@
 {
   "name": "vibe-cli",
-  "module": "index.ts",
+  "module": "src/cli/index.ts",
   "type": "module",
   "private": true,
   "devDependencies": {
@@ -8,5 +8,10 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "agent-tools-ts": "github.com:ishibashi-futos/agent-tools-ts#v0.3.0",
+    "openai": "^6.25.0",
+    "terminal-ui-kit": "github.com:ishibashi-futos/terminal-ui-kit#v0.1.2"
   }
 }

@@ -1,106 +1,99 @@
+# CLI Coding Agent Architecture
+(Chat Completions + Function Calling Only)
 
-Default to using Bun instead of Node.js.
+## Constraints
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+- Chat Completions API only
+- No native tool calling
+- Function calling is available
+- Main libraries: `terminal-ui-kit`, `agent-tools-ts`
+Native tool calling is unavailable, so the app must implement a manual function-call loop.
 
-## APIs
+## 1. Layered Architecture
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+### 1) UI Layer (`terminal-ui-kit`)
 
-## Testing
+Responsibility: interactive CLI only.
+- Accept user input
+- Stream assistant output
+- Render plans/diffs/logs
+- Ask confirmation before sensitive actions
+The UI never executes workspace logic; it delegates to Agent Core.
 
-Use `bun test` to run tests.
+### 2) Agent Core (Orchestrator)
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
-
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+Responsibility: state + execution control.
+State:
+- `messages[]` (full conversation history)
+- `workingMemory` (goals, active files, branch, etc.)
+- Optional workspace summary
+Chat Completions is stateless, so context is reconstructed on every request.
+Execution loop:
+```text
+User input
+ -> Chat Completion (functions enabled)
+ -> function_call?
+    -> yes: validate -> execute -> append result -> call model again
+    -> no: final response
 ```
 
-## Frontend
+Execution authority always remains in the application.
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+### 3) Tool Runtime (`agent-tools-ts`)
 
-Server:
+Responsibility: controlled workspace interaction.
+Bind runtime context:
+- `workspaceRoot`
+- `writeScope`
+- `policy`
+Typical functions:
+- `read_file`, `list_dir`, `search`
+- `apply_patch`, `run_shell`
+- `git_*`, `run_tests`
+For every model-proposed call:
+1. Validate against policy
+2. Optionally request user confirmation
+3. Execute in sandbox
+4. Log result and return it to conversation
 
-```ts#index.ts
-import index from "./index.html"
+## 2. Function Calling Strategy
 
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
+Define explicit JSON schemas for every allowed function.
+Rules:
+- Any file/system access must go through functions
+- Never assume unseen files
+- No direct mutation outside function invocation
+Execution results are added as `function` role messages, then re-evaluated by the model.
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+## 3. Permission Model
 
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
+Use `agent-tools-ts` controls:
+- `writeScope`: `"read-only" | "workspace-write" | "unrestricted"`
+- Per-tool allow/deny policy
+Recommended defaults:
+- Start at `read-only`
+- Deny by default
+- Require confirmation for writes, shell commands, and git operations
+Keep these concerns separate:
+- Model intent
+- Execution permission
+- User consent
 
-With the following `frontend.tsx`:
+## 4. Message Structure
 
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
+Each Chat Completion request should include:
+- `system` (rules, safety constraints, execution protocol)
+- Optional workspace summary
+- Current `user` input
+- Prior `assistant` and `function` messages
+Each function result should return structured output:
+- function name
+- arguments
+- stdout / stderr
+- exit code
+This enables traceability and deterministic debugging.
 
-// import .css files directly and it works
-import './index.css';
+## Design Principle
 
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+Recreate tool-calling behavior via structured function calls, controlled loop execution, sandboxing (`agent-tools-ts`), and explicit confirmation (`terminal-ui-kit`).
+The model proposes actions; the application decides and executes.

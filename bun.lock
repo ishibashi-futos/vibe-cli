@@ -4,6 +4,11 @@
   "workspaces": {
     "": {
       "name": "vibe-cli",
+      "dependencies": {
+        "agent-tools-ts": "github.com:ishibashi-futos/agent-tools-ts#v0.3.0",
+        "openai": "^6.25.0",
+        "terminal-ui-kit": "github.com:ishibashi-futos/terminal-ui-kit#v0.1.2",
+      },
       "devDependencies": {
         "@types/bun": "latest",
       },
@@ -17,7 +22,13 @@
 
     "@types/node": ["@types/node@25.3.2", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-RpV6r/ij22zRRdyBPcxDeKAzH43phWVKEjL2iksqo1Vz3CuBUrgmPpPhALKiRfU7OMCmeeO9vECBMsV0hMTG8Q=="],
 
+    "agent-tools-ts": ["agent-tools-ts@git+ssh://github.com:ishibashi-futos/agent-tools-ts#65800aa2c62ca9f83a65ec8f5ce8457496ba5fa5", { "peerDependencies": { "typescript": "^5" } }, "65800aa2c62ca9f83a65ec8f5ce8457496ba5fa5"],
+
     "bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
+
+    "openai": ["openai@6.25.0", "", { "peerDependencies": { "ws": "^8.18.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["ws", "zod"], "bin": { "openai": "bin/cli" } }, "sha512-mEh6VZ2ds2AGGokWARo18aPISI1OhlgdEIC1ewhkZr8pSIT31dec0ecr9Nhxx0JlybyOgoAT1sWeKtwPZzJyww=="],
+
+    "terminal-ui-kit": ["terminal-ui-kit@git+ssh://github.com:ishibashi-futos/terminal-ui-kit#5a9f87b4e7023366d85338951aa4c43e6f3d0e09", { "peerDependencies": { "typescript": "^5" } }, "5a9f87b4e7023366d85338951aa4c43e6f3d0e09"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
