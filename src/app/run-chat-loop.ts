@@ -57,7 +57,8 @@ export async function runChatLoop({
     }
 
     if (userInput === "/exit" || userInput === "/quit") {
-      break;
+      io.writeLine("See you again!");
+      process.exit(0);
     }
 
     messages = withUserMessage(messages, userInput);
