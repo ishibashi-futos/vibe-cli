@@ -3,6 +3,9 @@
   "module": "src/cli/index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "chat": "bun run --watch src/cli/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -10,7 +13,7 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "agent-tools-ts": "github.com:ishibashi-futos/agent-tools-ts#v0.3.0",
+    "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.4.0",
     "openai": "^6.25.0",
     "terminal-ui-kit": "github.com:ishibashi-futos/terminal-ui-kit#v0.1.2"
   }
