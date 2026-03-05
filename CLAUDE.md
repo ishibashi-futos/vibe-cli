@@ -97,3 +97,7 @@ This enables traceability and deterministic debugging.
 
 Recreate tool-calling behavior via structured function calls, controlled loop execution, sandboxing (`agent-tools-ts`), and explicit confirmation (`terminal-ui-kit`).
 The model proposes actions; the application decides and executes.
+
+## Definition of Done
+
+- passed `bun run sanity`

@@ -1,35 +1,109 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadAppConfig } from "../../src/config/runtime-config";
 
 describe("runtime-config", () => {
-  test("loads defaults when env variables are absent", () => {
-    const config = loadAppConfig({}, "default-system");
+  function withTestCwd(vibeConfig: string | null, run: () => void): void {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "vibe-config-test-"));
+    try {
+      if (vibeConfig !== null) {
+        mkdirSync(join(cwd, ".agents"), { recursive: true });
+        writeFileSync(join(cwd, ".agents", "vibe-config.json"), vibeConfig);
+      }
+      process.chdir(cwd);
+      run();
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
 
-    expect(config.baseUrl).toBe("http://192.168.10.13:1234/v1");
-    expect(config.apiKey).toBe("lmstudio");
-    expect(config.model).toBe("qwen2.5-coder-7b-instruct-mlx");
-    expect(config.systemPrompt).toBe("default-system");
-    expect(config.maxToolRounds).toBe(12);
-    expect(config.maxPreviewChars).toBe(4000);
-    expect(config.enforceToolCallFirstRound).toBe(true);
+  test("loads defaults when env variables are absent", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {
+          "qwen2.5-coder-7b-instruct-mlx": {
+            context_length: 32768,
+            base_url: "http://127.0.0.1:1234/v1",
+            api_key: "from-config",
+          },
+        },
+      }),
+      () => {
+        const config = loadAppConfig({}, "default-system");
+
+        expect(config.baseUrl).toBe("http://localhost:1234/v1");
+        expect(config.apiKey).toBe("lmstudio");
+        expect(config.model).toBe("qwen2.5-coder-7b-instruct-mlx");
+        expect(config.systemPrompt).toBe("default-system");
+        expect(config.maxToolRounds).toBe(12);
+        expect(config.maxPreviewChars).toBe(4000);
+        expect(config.enforceToolCallFirstRound).toBe(true);
+        expect(config.mentionMaxLines).toBe(100);
+        expect(config.modelTokenLimit).toBe(32768);
+        expect(config.modelContextLengths).toEqual({
+          "qwen2.5-coder-7b-instruct-mlx": 32768,
+        });
+        expect(config.modelBaseUrls).toEqual({
+          "qwen2.5-coder-7b-instruct-mlx": "http://127.0.0.1:1234/v1",
+        });
+        expect(config.modelApiKeys).toEqual({
+          "qwen2.5-coder-7b-instruct-mlx": "from-config",
+        });
+      },
+    );
   });
 
   test("uses explicit env values", () => {
-    const config = loadAppConfig(
-      {
-        OPENAI_BASE_URL: "http://localhost:1234/v1",
-        OPENAI_API_KEY: "key",
-        OPENAI_MODEL: "gpt-x",
-        SYSTEM_PROMPT: "sys",
-        ENFORCE_TOOL_CALL_FIRST_ROUND: "0",
-      },
-      "default-system",
-    );
+    withTestCwd(
+      JSON.stringify({
+        models: {
+          "qwen2.5-coder-7b-instruct-mlx": {
+            context_length: 32768,
+            base_url: "http://127.0.0.1:1234/v1",
+            api_key: "from-config",
+          },
+          "gpt-x": {
+            context_length: 100000,
+            base_url: "http://127.0.0.1:9999/v1",
+            api_key: "gpt-x-key",
+          },
+        },
+      }),
+      () => {
+        const config = loadAppConfig(
+          {
+            OPENAI_BASE_URL: "http://localhost:1234/v1",
+            OPENAI_API_KEY: "key",
+            OPENAI_MODEL: "gpt-x",
+            SYSTEM_PROMPT: "sys",
+            ENFORCE_TOOL_CALL_FIRST_ROUND: "0",
+          },
+          "default-system",
+        );
 
-    expect(config.baseUrl).toBe("http://localhost:1234/v1");
-    expect(config.apiKey).toBe("key");
-    expect(config.model).toBe("gpt-x");
-    expect(config.systemPrompt).toBe("sys");
-    expect(config.enforceToolCallFirstRound).toBe(false);
+        expect(config.baseUrl).toBe("http://localhost:1234/v1");
+        expect(config.apiKey).toBe("key");
+        expect(config.model).toBe("gpt-x");
+        expect(config.systemPrompt).toBe("sys");
+        expect(config.enforceToolCallFirstRound).toBe(false);
+        expect(config.modelTokenLimit).toBe(100000);
+        expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
+        expect(config.modelApiKeys["gpt-x"]).toBe("gpt-x-key");
+      },
+    );
+  });
+
+  test("falls back safely when .agents/vibe-config.json is missing", () => {
+    withTestCwd(null, () => {
+      const config = loadAppConfig({}, "default-system");
+      expect(config.modelContextLengths).toEqual({});
+      expect(config.modelBaseUrls).toEqual({});
+      expect(config.modelApiKeys).toEqual({});
+      expect(config.modelTokenLimit).toBeNull();
+    });
   });
 });

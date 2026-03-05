@@ -4,22 +4,50 @@ export type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 export type AssistantMessage = OpenAI.Chat.Completions.ChatCompletionMessage;
 export type CompletionTool = OpenAI.Chat.Completions.ChatCompletionTool;
 export type ToolCall = OpenAI.Chat.Completions.ChatCompletionMessageToolCall;
+export type OpenAIUsage = OpenAI.CompletionUsage;
+
+export interface CompletionResult {
+  message: AssistantMessage | null;
+  usage: OpenAIUsage | null;
+}
+
+export interface ReadUserInputResult {
+  value: string;
+  mentionedPaths: string[];
+}
+
+export interface TokenStatusSnapshot {
+  model: string;
+  baseUrl: string;
+  lastUsage: OpenAIUsage | null;
+  cumulativeUsage: OpenAIUsage;
+  tokenLimit: number | null;
+}
 
 export interface RuntimeConfig {
+  baseUrl: string;
+  apiKey: string;
   model: string;
+  modelContextLengths: Record<string, number>;
+  modelBaseUrls: Record<string, string>;
+  modelApiKeys: Record<string, string>;
   systemPrompt: string;
   maxToolRounds: number;
   maxPreviewChars: number;
   enforceToolCallFirstRound: boolean;
+  modelTokenLimit: number | null;
+  mentionMaxLines: number;
 }
 
 export interface CompletionGateway {
   request(params: {
+    baseUrl: string;
+    apiKey: string;
     model: string;
     messages: ChatMessage[];
     tools: CompletionTool[];
     toolChoice: "auto" | "required";
-  }): Promise<AssistantMessage | null>;
+  }): Promise<CompletionResult>;
 }
 
 export interface ToolRuntime {
@@ -32,7 +60,11 @@ export interface ToolRuntime {
 }
 
 export interface ConsoleIO {
-  readUserInput(prompt: string): Promise<string>;
+  readUserInput(prompt: string): Promise<ReadUserInputResult>;
+  selectModel(models: string[], currentModel: string): Promise<string>;
+  runWithSpinner<T>(message: string, task: () => Promise<T>): Promise<T>;
+  updateTokenStatus(snapshot: TokenStatusSnapshot): void;
+  resetSessionUiState(): void;
   writeLine(message: string): void;
   writeError(message: string): void;
 }

@@ -10,6 +10,7 @@ import type {
   ChatMessage,
   CompletionGateway,
   CompletionTool,
+  OpenAIUsage,
 } from "../../src/domain/types";
 
 function assistant(
@@ -23,6 +24,14 @@ function assistant(
     content: params.content ?? "",
     tool_calls: params.toolCalls,
     refusal: null,
+  };
+}
+
+function usage(total: number): OpenAIUsage {
+  return {
+    prompt_tokens: Math.floor(total / 2),
+    completion_tokens: total - Math.floor(total / 2),
+    total_tokens: total,
   };
 }
 
@@ -51,23 +60,31 @@ describe("chat-orchestrator", () => {
       async request({ toolChoice }) {
         calls.push(toolChoice);
         if (toolChoice === "auto") {
-          return assistant({ content: "first", toolCalls: [] });
+          return {
+            message: assistant({ content: "first", toolCalls: [] }),
+            usage: usage(10),
+          };
         }
-        return assistant({
-          content: "retry",
-          toolCalls: [
-            {
-              id: "call_1",
-              type: "function",
-              function: { name: "read_file", arguments: "{}" },
-            },
-          ],
-        });
+        return {
+          message: assistant({
+            content: "retry",
+            toolCalls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "read_file", arguments: "{}" },
+              },
+            ],
+          }),
+          usage: usage(20),
+        };
       },
     };
 
     const result = await requestAssistantMessage({
       gateway,
+      baseUrl: "http://localhost:1234/v1",
+      apiKey: "key",
       model: "m",
       messages: [] as ChatMessage[],
       tools: [] as CompletionTool[],
@@ -78,6 +95,7 @@ describe("chat-orchestrator", () => {
     expect(calls).toEqual(["auto", "required"]);
     expect(result.retriedWithRequired).toBe(true);
     expect(getToolCalls(result.message!)).toHaveLength(1);
+    expect(result.usage?.total_tokens).toBe(30);
   });
 
   test("requestAssistantMessage does not retry when tools exist", async () => {
@@ -85,21 +103,26 @@ describe("chat-orchestrator", () => {
     const gateway: CompletionGateway = {
       async request({ toolChoice }) {
         calls.push(toolChoice);
-        return assistant({
-          content: "ok",
-          toolCalls: [
-            {
-              id: "call_1",
-              type: "function",
-              function: { name: "read_file", arguments: "{}" },
-            },
-          ],
-        });
+        return {
+          message: assistant({
+            content: "ok",
+            toolCalls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "read_file", arguments: "{}" },
+              },
+            ],
+          }),
+          usage: usage(12),
+        };
       },
     };
 
     const result = await requestAssistantMessage({
       gateway,
+      baseUrl: "http://localhost:1234/v1",
+      apiKey: "key",
       model: "m",
       messages: [] as ChatMessage[],
       tools: [] as CompletionTool[],
@@ -110,17 +133,20 @@ describe("chat-orchestrator", () => {
     expect(calls).toEqual(["auto"]);
     expect(result.retriedWithRequired).toBe(false);
     expect(getAssistantContent(result.message!)).toBe("ok");
+    expect(result.usage?.total_tokens).toBe(12);
   });
 
-  test("requestAssistantMessage returns null if gateway returns null", async () => {
+  test("requestAssistantMessage returns null message when gateway has no message", async () => {
     const gateway: CompletionGateway = {
       async request() {
-        return null;
+        return { message: null, usage: null };
       },
     };
 
     const result = await requestAssistantMessage({
       gateway,
+      baseUrl: "http://localhost:1234/v1",
+      apiKey: "key",
       model: "m",
       messages: [] as ChatMessage[],
       tools: [] as CompletionTool[],
@@ -128,6 +154,10 @@ describe("chat-orchestrator", () => {
       enforceToolCallFirstRound: true,
     });
 
-    expect(result).toEqual({ message: null, retriedWithRequired: false });
+    expect(result).toEqual({
+      message: null,
+      usage: null,
+      retriedWithRequired: false,
+    });
   });
 });

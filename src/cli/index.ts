@@ -13,10 +13,7 @@ const config = loadAppConfig(process.env, defaultSystemPrompt);
 
 await runChatLoop({
   config,
-  completionGateway: createOpenAICompletionGateway({
-    baseUrl: config.baseUrl,
-    apiKey: config.apiKey,
-  }),
+  completionGateway: createOpenAICompletionGateway(),
   toolRuntime,
   io: createConsoleIO(),
 });

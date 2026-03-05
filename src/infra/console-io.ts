@@ -1,13 +1,92 @@
-import { HistoryManager, input } from "terminal-ui-kit";
-import type { ConsoleIO } from "../domain/types";
+import {
+  createStickyStatusBar,
+  HistoryManager,
+  input,
+  select,
+  withSpinner,
+  type InputCommand,
+} from "terminal-ui-kit";
+import type { ConsoleIO, TokenStatusSnapshot } from "../domain/types";
 
 export function createConsoleIO(): ConsoleIO {
-  const history = new HistoryManager();
+  let history = new HistoryManager();
+  const stickyBar = createStickyStatusBar();
+  let tokenStatus: TokenStatusSnapshot | null = null;
+  const commands: InputCommand[] = [
+    { name: "help", description: "Show slash command help" },
+    { name: "model", description: "Show/change current model" },
+    { name: "status", description: "Show current session status" },
+    { name: "new", description: "Start a new session" },
+    { name: "exit", description: "Exit the app" },
+    { name: "quit", description: "Exit the app (alias)" },
+  ];
+
+  const renderTokenText = () => {
+    if (!tokenStatus) {
+      return "";
+    }
+
+    const { model, baseUrl, lastUsage, cumulativeUsage, tokenLimit } =
+      tokenStatus;
+    const lastTotal = lastUsage?.total_tokens;
+    const parts = [
+      `model=${model}`,
+      `url=${baseUrl}`,
+      `last=${typeof lastTotal === "number" ? lastTotal : "N/A"}`,
+      `total=${cumulativeUsage.total_tokens}`,
+    ];
+
+    if (typeof tokenLimit === "number") {
+      const ratio = ((cumulativeUsage.total_tokens / tokenLimit) * 100).toFixed(
+        1,
+      );
+      parts.push(`${ratio}%/${tokenLimit}`);
+    }
+
+    return parts.join(" ");
+  };
 
   return {
     async readUserInput(prompt) {
-      const result = await input(prompt, history);
-      return result.value;
+      const result = await input(prompt, history, {
+        commands,
+        stickyStatusBar: {
+          bar: stickyBar,
+          render: ({ buffer }) => {
+            const tokenText = renderTokenText();
+            const bufferText = `len=${buffer.length}`;
+            if (tokenText.length === 0) {
+              return bufferText;
+            }
+            return `${bufferText} | ${tokenText}`;
+          },
+        },
+      });
+
+      return {
+        value: result.value,
+        mentionedPaths: result.paths,
+      };
+    },
+    runWithSpinner(message, task) {
+      return withSpinner(message, task);
+    },
+    selectModel(models, currentModel) {
+      return select(
+        "Select model",
+        models.map((model) => ({
+          label: model === currentModel ? `${model} (current)` : model,
+          value: model,
+        })),
+      );
+    },
+    updateTokenStatus(snapshot) {
+      tokenStatus = snapshot;
+    },
+    resetSessionUiState() {
+      history = new HistoryManager();
+      tokenStatus = null;
+      stickyBar.clear();
     },
     writeLine(message) {
       console.log(message);
