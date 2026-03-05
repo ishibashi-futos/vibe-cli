@@ -6,8 +6,8 @@
       "name": "vibe-cli",
       "dependencies": {
         "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.5.0",
-        "openai": "^6.25.0",
         "terminal-ui-kit": "github:ishibashi-futos/terminal-ui-kit#v0.2.1",
+        "openai": "^6.25.0",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.5",
@@ -47,7 +47,7 @@
 
     "openai": ["openai@6.25.0", "", { "peerDependencies": { "ws": "^8.18.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["ws", "zod"], "bin": { "openai": "bin/cli" } }, "sha512-mEh6VZ2ds2AGGokWARo18aPISI1OhlgdEIC1ewhkZr8pSIT31dec0ecr9Nhxx0JlybyOgoAT1sWeKtwPZzJyww=="],
 
-    "terminal-ui-kit": ["terminal-ui-kit@github:ishibashi-futos/terminal-ui-kit#98f04d4", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-terminal-ui-kit-98f04d4", "sha512-WHyIw/ZI4WqVjBDBQOjdbtlycnDwueDKb4PQVsZ9XTUBJ1s6jg492aRlztm1x0fEVMOjSHT+Zne93ms12gJYGQ=="],
+    "terminal-ui-kit": ["terminal-ui-kit@github:ishibashi-futos/terminal-ui-kit#7d43b1b", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-terminal-ui-kit-7d43b1b", "sha512-w5zggdhkEkZbTD32e/mAPEoRHZuvYsBYRTjY6OpkjsRGD5x9odLhT4h/itT+ESJCSWtPseF97ClrL4NPSJs7bw=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
