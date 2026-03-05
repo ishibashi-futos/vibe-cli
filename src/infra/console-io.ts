@@ -31,7 +31,6 @@ export function createConsoleIO(): ConsoleIO {
     const lastTotal = lastUsage?.total_tokens;
     const parts = [
       `model=${model}`,
-      `url=${baseUrl}`,
       `last=${typeof lastTotal === "number" ? lastTotal : "N/A"}`,
       `total=${cumulativeUsage.total_tokens}`,
     ];
