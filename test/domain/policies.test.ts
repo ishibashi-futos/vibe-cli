@@ -9,6 +9,18 @@ describe("policies", () => {
     expect(prompt).toContain("Never call unavailable tools");
   });
 
+  test("buildDefaultSystemPrompt injects runtime environment when provided", () => {
+    const prompt = buildDefaultSystemPrompt(["read_file"], {
+      platform: "darwin",
+      osRelease: "24.4.0",
+      shell: "zsh",
+    });
+
+    expect(prompt).toContain(
+      "Execution environment: platform=darwin, os_release=24.4.0, shell=zsh.",
+    );
+  });
+
   test("toPreview truncates large content", () => {
     const preview = toPreview("1234567890", 5);
     expect(preview).toContain("12345");

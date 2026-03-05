@@ -5,7 +5,7 @@ import {
   type ToolPolicy,
 } from "agent-tools-ts";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ToolRuntime } from "../domain/types";
 
 const DEFAULT_WRITE_SCOPE: FileAccessMode = "workspace-write";
@@ -109,6 +109,17 @@ export function createDefaultToolRuntime(workspaceRoot: string): ToolRuntime {
         .getAllowedTools()
         .map((tool) => tool.function.name)
         .sort();
+    },
+    getExecutionEnvironment() {
+      const shell =
+        process.env.SHELL ??
+        process.env.ComSpec ??
+        (toolContext.env.platform === "win32" ? "pwsh.exe" : "unknown");
+      return {
+        platform: toolContext.env.platform,
+        osRelease: toolContext.env.osRelease,
+        shell: basename(shell),
+      };
     },
     getSecuritySummary() {
       const explicitDenyTools = Object.entries(loaded.policy.tools)

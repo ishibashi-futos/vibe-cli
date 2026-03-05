@@ -417,12 +417,12 @@ describe("runChatLoop", () => {
       io,
     });
 
-    expect(logs.some((line) => line.includes("[status] write_scope=read-only"))).toBe(
-      true,
-    );
-    expect(logs.some((line) => line.includes("[status] default_policy=deny"))).toBe(
-      true,
-    );
+    expect(
+      logs.some((line) => line.includes("[status] write_scope=read-only")),
+    ).toBe(true);
+    expect(
+      logs.some((line) => line.includes("[status] default_policy=deny")),
+    ).toBe(true);
     expect(
       logs.some((line) =>
         line.includes("[status] explicit_deny_tools=exec_command,write_file"),

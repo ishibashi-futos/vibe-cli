@@ -54,6 +54,11 @@ export interface CompletionGateway {
 export interface ToolRuntime {
   getAllowedTools(): CompletionTool[];
   getAllowedToolNames(): string[];
+  getExecutionEnvironment?(): {
+    platform: NodeJS.Platform;
+    osRelease: string;
+    shell: string;
+  };
   getSecuritySummary?(): {
     writeScope: "read-only" | "workspace-write" | "unrestricted";
     defaultPolicy: "allow" | "deny";

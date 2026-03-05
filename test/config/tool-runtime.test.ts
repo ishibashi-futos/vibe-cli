@@ -9,11 +9,16 @@ describe("tool-runtime config", () => {
     vibeConfig: string | null,
     run: (workspaceRoot: string) => void,
   ): void {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "vibe-tool-runtime-test-"));
+    const workspaceRoot = mkdtempSync(
+      join(tmpdir(), "vibe-tool-runtime-test-"),
+    );
     try {
       if (vibeConfig !== null) {
         mkdirSync(join(workspaceRoot, ".agents"), { recursive: true });
-        writeFileSync(join(workspaceRoot, ".agents", "vibe-config.json"), vibeConfig);
+        writeFileSync(
+          join(workspaceRoot, ".agents", "vibe-config.json"),
+          vibeConfig,
+        );
       }
       run(workspaceRoot);
     } finally {
@@ -25,10 +30,15 @@ describe("tool-runtime config", () => {
     withWorkspace(JSON.stringify({ models: {} }), (workspaceRoot) => {
       const runtime = createDefaultToolRuntime(workspaceRoot);
       const allowed = runtime.getAllowedToolNames();
+      const executionEnv = runtime.getExecutionEnvironment?.();
 
       expect(allowed).toContain("read_file");
       expect(allowed).toContain("write_file");
       expect(allowed).toContain("exec_command");
+      expect(executionEnv).toBeDefined();
+      expect(executionEnv?.platform).toBe(process.platform);
+      expect(executionEnv?.osRelease.length).toBeGreaterThan(0);
+      expect(executionEnv?.shell.length).toBeGreaterThan(0);
     });
   });
 

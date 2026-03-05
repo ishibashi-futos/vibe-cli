@@ -130,9 +130,7 @@ function formatStatus(params: {
 
   if (toolRuntimeSecurity) {
     lines.push(`[status] write_scope=${toolRuntimeSecurity.writeScope}`);
-    lines.push(
-      `[status] default_policy=${toolRuntimeSecurity.defaultPolicy}`,
-    );
+    lines.push(`[status] default_policy=${toolRuntimeSecurity.defaultPolicy}`);
     lines.push(
       `[status] explicit_deny_tools=${toolRuntimeSecurity.explicitDenyTools.length > 0 ? toolRuntimeSecurity.explicitDenyTools.join(",") : "none"}`,
     );

@@ -8,6 +8,7 @@ import { createDefaultToolRuntime } from "../infra/tool-runtime";
 const toolRuntime = createDefaultToolRuntime(process.cwd());
 const defaultSystemPrompt = buildDefaultSystemPrompt(
   toolRuntime.getAllowedToolNames(),
+  toolRuntime.getExecutionEnvironment?.(),
 );
 const config = loadAppConfig(process.env, defaultSystemPrompt);
 
