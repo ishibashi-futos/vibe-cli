@@ -16,6 +16,19 @@ export interface ReadUserInputResult {
   mentionedPaths: string[];
 }
 
+export interface SlashCommand {
+  name: string;
+  description?: string;
+  callback?: (
+    args: string[],
+    rawInput: string,
+  ) => void | Promise<void>;
+}
+
+export interface ReadUserInputOptions {
+  commands?: SlashCommand[];
+}
+
 export interface TokenStatusSnapshot {
   model: string;
   baseUrl: string;
@@ -71,7 +84,10 @@ export interface ToolRuntime {
 }
 
 export interface ConsoleIO {
-  readUserInput(prompt: string): Promise<ReadUserInputResult>;
+  readUserInput(
+    prompt: string,
+    options?: ReadUserInputOptions,
+  ): Promise<ReadUserInputResult>;
   selectModel(models: string[], currentModel: string): Promise<string>;
   runWithSpinner<T>(message: string, task: () => Promise<T>): Promise<T>;
   updateTokenStatus(snapshot: TokenStatusSnapshot): void;

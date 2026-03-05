@@ -17,4 +17,7 @@ await runChatLoop({
   completionGateway: createOpenAICompletionGateway(),
   toolRuntime,
   io: createConsoleIO(),
+  onExit: () => {
+    process.exit(0);
+  },
 });

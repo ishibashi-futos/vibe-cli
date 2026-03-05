@@ -6,7 +6,6 @@ import type {
   CompletionTool,
   ConsoleIO,
   OpenAIUsage,
-  ReadUserInputResult,
   RuntimeConfig,
   TokenStatusSnapshot,
   ToolRuntime,
@@ -31,8 +30,22 @@ function createTestIO(inputs: ReadonlyArray<string>) {
   let lastCurrentModel = "";
 
   const io: ConsoleIO = {
-    async readUserInput() {
+    async readUserInput(_prompt, options) {
       const value = queue.shift() ?? "/exit";
+      const trimmed = value.trim();
+      if (trimmed.startsWith("/")) {
+        const slashTokens = trimmed
+          .slice(1)
+          .split(/\s+/)
+          .filter((token) => token.length > 0);
+        const commandName = slashTokens[0] ?? "";
+        const command = options?.commands?.find(
+          (candidate) => candidate.name === commandName,
+        );
+        if (command?.callback) {
+          await command.callback(slashTokens.slice(1), value);
+        }
+      }
       return {
         value,
         mentionedPaths: value.includes("@README.md") ? ["README.md"] : [],

@@ -17,6 +17,7 @@ import type {
   ConsoleIO,
   OpenAIUsage,
   RuntimeConfig,
+  SlashCommand,
   ToolRuntime,
 } from "../domain/types";
 import {
@@ -30,6 +31,7 @@ interface RunChatLoopDeps {
   completionGateway: CompletionGateway;
   toolRuntime: ToolRuntime;
   io: ConsoleIO;
+  onExit?: () => void;
 }
 
 interface MentionAttachment {
@@ -66,29 +68,6 @@ function addUsage(base: OpenAIUsage, delta: OpenAIUsage | null): OpenAIUsage {
     prompt_tokens: base.prompt_tokens + delta.prompt_tokens,
     completion_tokens: base.completion_tokens + delta.completion_tokens,
     total_tokens: base.total_tokens + delta.total_tokens,
-  };
-}
-
-function parseSlashCommand(
-  input: string,
-): { name: string; args: string[] } | null {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith("/")) {
-    return null;
-  }
-
-  const tokens = trimmed
-    .slice(1)
-    .split(/\s+/)
-    .filter((token) => token.length > 0);
-  if (tokens.length === 0) {
-    return null;
-  }
-
-  const [name, ...args] = tokens;
-  return {
-    name: name!.toLowerCase(),
-    args,
   };
 }
 
@@ -201,6 +180,7 @@ export async function runChatLoop({
   completionGateway,
   toolRuntime,
   io,
+  onExit,
 }: RunChatLoopDeps): Promise<void> {
   const tools = toolRuntime.getAllowedTools();
   const availableToolNames = toolRuntime.getAllowedToolNames();
@@ -244,94 +224,133 @@ export async function runChatLoop({
   io.writeLine("Submit with Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux).");
 
   while (true) {
-    const inputResult = await io.readUserInput("> ");
+    let consumedSlashCommand = false;
+    let shouldExit = false;
+    const inputResult = await io.readUserInput("> ", {
+      commands: [
+        {
+          name: "help",
+          description: "Show slash command help",
+          callback: () => {
+            consumedSlashCommand = true;
+            for (const line of HELP_LINES) {
+              io.writeLine(line);
+            }
+          },
+        },
+        {
+          name: "status",
+          description: "Show current session status",
+          callback: () => {
+            consumedSlashCommand = true;
+            const statusLines = formatStatus({
+              model: currentModel,
+              baseUrl: currentBaseUrl,
+              agentInstructionPath: config.agentInstructionPath,
+              configuredModelCount: configuredModelNames.length,
+              messageCount: messages.length,
+              lastUsage,
+              cumulativeUsage,
+              tokenLimit: resolveTokenLimit(currentModel),
+              toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
+            });
+            for (const line of statusLines) {
+              io.writeLine(line);
+            }
+          },
+        },
+        {
+          name: "model",
+          description: "Show/change current model",
+          callback: async () => {
+            consumedSlashCommand = true;
+            if (configuredModelNames.length === 0) {
+              io.writeError(
+                "[error] no models found in .agents/vibe-config.json",
+              );
+              return;
+            }
+
+            const selectableModels = [
+              currentModel,
+              ...configuredModelNames
+                .filter((modelName) => modelName !== currentModel)
+                .sort(),
+            ];
+            const requested = await io.selectModel(selectableModels, currentModel);
+
+            currentModel = requested;
+            currentBaseUrl = resolveBaseUrl(currentModel);
+            currentApiKey = resolveApiKey(currentModel);
+            lastUsage = null;
+            cumulativeUsage = createZeroUsage();
+            io.updateTokenStatus({
+              model: currentModel,
+              baseUrl: currentBaseUrl,
+              lastUsage,
+              cumulativeUsage,
+              tokenLimit: resolveTokenLimit(currentModel),
+            });
+            io.writeLine(
+              `[status] switched model to ${currentModel} (base_url=${currentBaseUrl})`,
+            );
+          },
+        },
+        {
+          name: "new",
+          description: "Start a new session",
+          callback: () => {
+            consumedSlashCommand = true;
+            messages = [{ role: "system", content: config.systemPrompt }];
+            lastUsage = null;
+            cumulativeUsage = createZeroUsage();
+            io.resetSessionUiState();
+            io.updateTokenStatus({
+              model: currentModel,
+              baseUrl: currentBaseUrl,
+              lastUsage,
+              cumulativeUsage,
+              tokenLimit: resolveTokenLimit(currentModel),
+            });
+            io.writeLine("[status] started a new session");
+          },
+        },
+        {
+          name: "exit",
+          description: "Exit the app",
+          callback: () => {
+            consumedSlashCommand = true;
+            shouldExit = true;
+            io.writeLine("See you again!");
+          },
+        },
+        {
+          name: "quit",
+          description: "Exit the app (alias)",
+          callback: () => {
+            consumedSlashCommand = true;
+            shouldExit = true;
+            io.writeLine("See you again!");
+          },
+        },
+      ] satisfies SlashCommand[],
+    });
     const userInput = inputResult.value.trim();
 
     if (!userInput) {
       continue;
     }
 
-    const slash = parseSlashCommand(userInput);
-    if (slash) {
-      if (slash.name === "help") {
-        for (const line of HELP_LINES) {
-          io.writeLine(line);
-        }
-        continue;
-      }
-
-      if (slash.name === "status") {
-        const statusLines = formatStatus({
-          model: currentModel,
-          baseUrl: currentBaseUrl,
-          agentInstructionPath: config.agentInstructionPath,
-          configuredModelCount: configuredModelNames.length,
-          messageCount: messages.length,
-          lastUsage,
-          cumulativeUsage,
-          tokenLimit: resolveTokenLimit(currentModel),
-          toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
-        });
-        for (const line of statusLines) {
-          io.writeLine(line);
-        }
-        continue;
-      }
-
-      if (slash.name === "model") {
-        if (configuredModelNames.length === 0) {
-          io.writeError("[error] no models found in .agents/vibe-config.json");
-          continue;
-        }
-
-        const selectableModels = [
-          currentModel,
-          ...configuredModelNames
-            .filter((modelName) => modelName !== currentModel)
-            .sort(),
-        ];
-        const requested = await io.selectModel(selectableModels, currentModel);
-
-        currentModel = requested;
-        currentBaseUrl = resolveBaseUrl(currentModel);
-        currentApiKey = resolveApiKey(currentModel);
-        lastUsage = null;
-        cumulativeUsage = createZeroUsage();
-        io.updateTokenStatus({
-          model: currentModel,
-          baseUrl: currentBaseUrl,
-          lastUsage,
-          cumulativeUsage,
-          tokenLimit: resolveTokenLimit(currentModel),
-        });
-        io.writeLine(
-          `[status] switched model to ${currentModel} (base_url=${currentBaseUrl})`,
-        );
-        continue;
-      }
-
-      if (slash.name === "new") {
-        messages = [{ role: "system", content: config.systemPrompt }];
-        lastUsage = null;
-        cumulativeUsage = createZeroUsage();
-        io.resetSessionUiState();
-        io.updateTokenStatus({
-          model: currentModel,
-          baseUrl: currentBaseUrl,
-          lastUsage,
-          cumulativeUsage,
-          tokenLimit: resolveTokenLimit(currentModel),
-        });
-        io.writeLine("[status] started a new session");
-        continue;
-      }
-
-      if (slash.name === "exit" || slash.name === "quit") {
-        io.writeLine("See you again!");
+    if (consumedSlashCommand) {
+      if (shouldExit) {
+        onExit?.();
         return;
       }
+      continue;
+    }
 
-      io.writeError(`[error] unknown slash command: /${slash.name}`);
+    if (userInput.startsWith("/")) {
+      io.writeError("[error] unknown slash command");
       continue;
     }
 

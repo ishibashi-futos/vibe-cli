@@ -4,22 +4,17 @@ import {
   input,
   select,
   withSpinner,
-  type InputCommand,
 } from "terminal-ui-kit";
-import type { ConsoleIO, TokenStatusSnapshot } from "../domain/types";
+import type {
+  ConsoleIO,
+  ReadUserInputOptions,
+  TokenStatusSnapshot,
+} from "../domain/types";
 
 export function createConsoleIO(): ConsoleIO {
   let history = new HistoryManager();
   const stickyBar = createStickyStatusBar();
   let tokenStatus: TokenStatusSnapshot | null = null;
-  const commands: InputCommand[] = [
-    { name: "help", description: "Show slash command help" },
-    { name: "model", description: "Show/change current model" },
-    { name: "status", description: "Show current session status" },
-    { name: "new", description: "Start a new session" },
-    { name: "exit", description: "Exit the app" },
-    { name: "quit", description: "Exit the app (alias)" },
-  ];
 
   const renderTokenText = () => {
     if (!tokenStatus) {
@@ -46,9 +41,9 @@ export function createConsoleIO(): ConsoleIO {
   };
 
   return {
-    async readUserInput(prompt) {
+    async readUserInput(prompt, options: ReadUserInputOptions = {}) {
       const result = await input(prompt, history, {
-        commands,
+        commands: options.commands,
         stickyStatusBar: {
           bar: stickyBar,
           render: ({ buffer }) => {
