@@ -101,6 +101,11 @@ function formatStatus(params: {
   lastUsage: OpenAIUsage | null;
   cumulativeUsage: OpenAIUsage;
   tokenLimit: number | null;
+  toolRuntimeSecurity: {
+    writeScope: "read-only" | "workspace-write" | "unrestricted";
+    defaultPolicy: "allow" | "deny";
+    explicitDenyTools: string[];
+  } | null;
 }): string[] {
   const {
     model,
@@ -111,6 +116,7 @@ function formatStatus(params: {
     lastUsage,
     cumulativeUsage,
     tokenLimit,
+    toolRuntimeSecurity,
   } = params;
   const lines = [
     `[status] model=${model}`,
@@ -121,6 +127,16 @@ function formatStatus(params: {
     `[status] tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
     `[status] tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
   ];
+
+  if (toolRuntimeSecurity) {
+    lines.push(`[status] write_scope=${toolRuntimeSecurity.writeScope}`);
+    lines.push(
+      `[status] default_policy=${toolRuntimeSecurity.defaultPolicy}`,
+    );
+    lines.push(
+      `[status] explicit_deny_tools=${toolRuntimeSecurity.explicitDenyTools.length > 0 ? toolRuntimeSecurity.explicitDenyTools.join(",") : "none"}`,
+    );
+  }
 
   if (typeof tokenLimit === "number") {
     const ratio = ((cumulativeUsage.total_tokens / tokenLimit) * 100).toFixed(
@@ -256,6 +272,7 @@ export async function runChatLoop({
           lastUsage,
           cumulativeUsage,
           tokenLimit: resolveTokenLimit(currentModel),
+          toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
         });
         for (const line of statusLines) {
           io.writeLine(line);

@@ -54,6 +54,11 @@ export interface CompletionGateway {
 export interface ToolRuntime {
   getAllowedTools(): CompletionTool[];
   getAllowedToolNames(): string[];
+  getSecuritySummary?(): {
+    writeScope: "read-only" | "workspace-write" | "unrestricted";
+    defaultPolicy: "allow" | "deny";
+    explicitDenyTools: string[];
+  };
   invoke(
     toolName: string,
     args: Record<string, unknown>,

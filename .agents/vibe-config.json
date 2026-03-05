@@ -1,5 +1,11 @@
 {
   "instruction_file": "CLAUDE.md",
+  "tool_runtime": {
+    "write_scope": "workspace-write",
+    "policy": {
+      "default_policy": "allow"
+    }
+  },
   "models": {
     "qwen2.5-coder-7b-instruct-mlx": {
       "context_length": 32768,

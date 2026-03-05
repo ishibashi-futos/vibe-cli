@@ -34,6 +34,15 @@ bun run src/cli/index.ts
 ```json
 {
   "instruction_file": "CLAUDE.md",
+  "tool_runtime": {
+    "write_scope": "workspace-write",
+    "policy": {
+      "default_policy": "allow",
+      "tools": {
+        "exec_command": "deny"
+      }
+    }
+  },
   "models": {
     "model_name": {
       "context_length": 32768,
@@ -45,6 +54,9 @@ bun run src/cli/index.ts
 ```
 - `instruction_file` can be relative to workspace root or absolute path.
 - If `instruction_file` is set but the file is missing, the app falls back to `AGENTS.md`.
+- `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).
+- `tool_runtime.policy.default_policy` is optional: `allow | deny` (default: `allow`).
+- `tool_runtime.policy.tools` is optional per-tool override map (`allow | deny`).
 - `/model` can switch only to model names defined under `models`.
 - `base_url` / `api_key` are optional per model. If omitted, global env (`OPENAI_BASE_URL` / `OPENAI_API_KEY`) is used.
 

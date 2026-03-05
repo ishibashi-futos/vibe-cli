@@ -378,4 +378,55 @@ describe("runChatLoop", () => {
     expect(tokenSnapshots.at(-1)?.model).toBe("alt-model");
     expect(tokenSnapshots.at(-1)?.tokenLimit).toBe(2000);
   });
+
+  test("shows tool runtime security settings in /status", async () => {
+    const { io, logs } = createTestIO(["/status", "/exit"]);
+
+    const completionGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: null,
+          usage: null,
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file", "tree"];
+      },
+      getSecuritySummary() {
+        return {
+          writeScope: "read-only",
+          defaultPolicy: "deny",
+          explicitDenyTools: ["exec_command", "write_file"],
+        };
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig(),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(logs.some((line) => line.includes("[status] write_scope=read-only"))).toBe(
+      true,
+    );
+    expect(logs.some((line) => line.includes("[status] default_policy=deny"))).toBe(
+      true,
+    );
+    expect(
+      logs.some((line) =>
+        line.includes("[status] explicit_deny_tools=exec_command,write_file"),
+      ),
+    ).toBe(true);
+  });
 });

@@ -6,5 +6,5 @@
 - [ ] 複数エージェント(sub-agents)の起動
 - [ ] バイナリ配布(ビルドスクリプト `bun build` の作成とCIへの組み込み)
 - [ ] Configurationの実装 `~/.config/vibe-cli/config.json` とModel切り替えの実装(`/model`)
-- [ ] `/model` でモデルの切り替え
+- [x] `/model` でモデルの切り替え
 - [ ] `history` / agent / tool call の永続化 / resume
