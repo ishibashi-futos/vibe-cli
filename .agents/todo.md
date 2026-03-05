@@ -1,0 +1,9 @@
+- [ ] AGENTS.md / CLAUDE.md の読み込み
+- [ ] writeScope / policy 等の読み込み `.agents/vibe-config.json`
+- [ ] OS(Winwods/Mac) / シェル環境（pwsh.exe / zsh / bash）を考慮したシステムプロンプトの注入
+- [ ] `/compact` による会話履歴の要約
+- [ ] LLM API Callのリトライ処理
+- [ ] 複数エージェント(sub-agents)の起動
+- [ ] バイナリ配布(ビルドスクリプト `bun build` の作成とCIへの組み込み)
+- [ ] Configurationの実装 `~/.config/vibe-cli/config.json` とModel切り替えの実装(`/model`)
+- [ ] `/model` でモデルの切り替え

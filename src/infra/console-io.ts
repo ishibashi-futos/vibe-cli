@@ -5,8 +5,9 @@ export function createConsoleIO(): ConsoleIO {
   const history = new HistoryManager();
 
   return {
-    readUserInput(prompt) {
-      return input(prompt, history);
+    async readUserInput(prompt) {
+      const result = await input(prompt, history);
+      return result.value;
     },
     writeLine(message) {
       console.log(message);
