@@ -27,10 +27,13 @@ bun run src/cli/index.ts
 ## Agent Config
 
 - The app reads model definitions from `.agents/vibe-config.json`.
+- Agent instruction file defaults to `AGENTS.md` at workspace root.
+- You can override instruction file path with `instruction_file` in `.agents/vibe-config.json` (for example, `CLAUDE.md`).
 - JSON schema:
 
 ```json
 {
+  "instruction_file": "CLAUDE.md",
   "models": {
     "model_name": {
       "context_length": 32768,
@@ -40,6 +43,8 @@ bun run src/cli/index.ts
   }
 }
 ```
+- `instruction_file` can be relative to workspace root or absolute path.
+- If `instruction_file` is set but the file is missing, the app falls back to `AGENTS.md`.
 - `/model` can switch only to model names defined under `models`.
 - `base_url` / `api_key` are optional per model. If omitted, global env (`OPENAI_BASE_URL` / `OPENAI_API_KEY`) is used.
 

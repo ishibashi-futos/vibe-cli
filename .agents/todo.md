@@ -1,4 +1,4 @@
-- [ ] AGENTS.md / CLAUDE.md の読み込み
+- [x] AGENTS.md / CLAUDE.md の読み込み
 - [ ] writeScope / policy 等の読み込み `.agents/vibe-config.json`
 - [ ] OS(Winwods/Mac) / シェル環境（pwsh.exe / zsh / bash）を考慮したシステムプロンプトの注入
 - [ ] `/compact` による会話履歴の要約

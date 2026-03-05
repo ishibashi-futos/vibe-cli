@@ -5,13 +5,20 @@ import { join } from "node:path";
 import { loadAppConfig } from "../../src/config/runtime-config";
 
 describe("runtime-config", () => {
-  function withTestCwd(vibeConfig: string | null, run: () => void): void {
+  function withTestCwd(
+    vibeConfig: string | null,
+    files: Record<string, string>,
+    run: () => void,
+  ): void {
     const originalCwd = process.cwd();
     const cwd = mkdtempSync(join(tmpdir(), "vibe-config-test-"));
     try {
       if (vibeConfig !== null) {
         mkdirSync(join(cwd, ".agents"), { recursive: true });
         writeFileSync(join(cwd, ".agents", "vibe-config.json"), vibeConfig);
+      }
+      for (const [path, content] of Object.entries(files)) {
+        writeFileSync(join(cwd, path), content);
       }
       process.chdir(cwd);
       run();
@@ -32,6 +39,7 @@ describe("runtime-config", () => {
           },
         },
       }),
+      {},
       () => {
         const config = loadAppConfig({}, "default-system");
 
@@ -39,6 +47,7 @@ describe("runtime-config", () => {
         expect(config.apiKey).toBe("lmstudio");
         expect(config.model).toBe("qwen2.5-coder-7b-instruct-mlx");
         expect(config.systemPrompt).toBe("default-system");
+        expect(config.agentInstructionPath).toBeNull();
         expect(config.maxToolRounds).toBe(12);
         expect(config.maxPreviewChars).toBe(4000);
         expect(config.enforceToolCallFirstRound).toBe(true);
@@ -73,6 +82,7 @@ describe("runtime-config", () => {
           },
         },
       }),
+      {},
       () => {
         const config = loadAppConfig(
           {
@@ -89,6 +99,7 @@ describe("runtime-config", () => {
         expect(config.apiKey).toBe("key");
         expect(config.model).toBe("gpt-x");
         expect(config.systemPrompt).toBe("sys");
+        expect(config.agentInstructionPath).toBeNull();
         expect(config.enforceToolCallFirstRound).toBe(false);
         expect(config.modelTokenLimit).toBe(100000);
         expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
@@ -98,12 +109,70 @@ describe("runtime-config", () => {
   });
 
   test("falls back safely when .agents/vibe-config.json is missing", () => {
-    withTestCwd(null, () => {
+    withTestCwd(null, {}, () => {
       const config = loadAppConfig({}, "default-system");
       expect(config.modelContextLengths).toEqual({});
       expect(config.modelBaseUrls).toEqual({});
       expect(config.modelApiKeys).toEqual({});
       expect(config.modelTokenLimit).toBeNull();
+      expect(config.agentInstructionPath).toBeNull();
     });
+  });
+
+  test("appends AGENTS.md content to default system prompt", () => {
+    withTestCwd(
+      JSON.stringify({ models: {} }),
+      { "AGENTS.md": "project instructions" },
+      () => {
+        const config = loadAppConfig({}, "default-system");
+        expect(config.systemPrompt).toBe(
+          "default-system\n\nproject instructions",
+        );
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), "AGENTS.md"),
+        );
+      },
+    );
+  });
+
+  test("uses instruction_file from .agents/vibe-config.json", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {},
+        instruction_file: "CLAUDE.md",
+      }),
+      {
+        "AGENTS.md": "default instructions",
+        "CLAUDE.md": "custom instructions",
+      },
+      () => {
+        const config = loadAppConfig({}, "default-system");
+        expect(config.systemPrompt).toBe(
+          "default-system\n\ncustom instructions",
+        );
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), "CLAUDE.md"),
+        );
+      },
+    );
+  });
+
+  test("falls back to AGENTS.md when configured instruction_file is missing", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {},
+        instruction_file: "MISSING.md",
+      }),
+      { "AGENTS.md": "default instructions" },
+      () => {
+        const config = loadAppConfig({}, "default-system");
+        expect(config.systemPrompt).toBe(
+          "default-system\n\ndefault instructions",
+        );
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), "AGENTS.md"),
+        );
+      },
+    );
   });
 });

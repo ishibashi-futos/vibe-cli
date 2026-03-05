@@ -95,6 +95,7 @@ function parseSlashCommand(
 function formatStatus(params: {
   model: string;
   baseUrl: string;
+  agentInstructionPath: string | null;
   configuredModelCount: number;
   messageCount: number;
   lastUsage: OpenAIUsage | null;
@@ -104,6 +105,7 @@ function formatStatus(params: {
   const {
     model,
     baseUrl,
+    agentInstructionPath,
     configuredModelCount,
     messageCount,
     lastUsage,
@@ -113,6 +115,7 @@ function formatStatus(params: {
   const lines = [
     `[status] model=${model}`,
     `[status] base_url=${baseUrl}`,
+    `[status] instruction_file=${agentInstructionPath ?? "N/A"}`,
     `[status] configured_models=${configuredModelCount}`,
     `[status] messages=${messageCount}`,
     `[status] tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
@@ -247,6 +250,7 @@ export async function runChatLoop({
         const statusLines = formatStatus({
           model: currentModel,
           baseUrl: currentBaseUrl,
+          agentInstructionPath: config.agentInstructionPath,
           configuredModelCount: configuredModelNames.length,
           messageCount: messages.length,
           lastUsage,

@@ -93,6 +93,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
       "alt-model": "alt-key",
     },
     systemPrompt: "sys",
+    agentInstructionPath: "/tmp/AGENTS.md",
     maxToolRounds: 2,
     maxPreviewChars: 100,
     enforceToolCallFirstRound: false,
@@ -238,6 +239,11 @@ describe("runChatLoop", () => {
     expect(getResetCount()).toBe(1);
     expect(
       logs.some((line) => line.includes("[status] started a new session")),
+    ).toBe(true);
+    expect(
+      logs.some((line) =>
+        line.includes("[status] instruction_file=/tmp/AGENTS.md"),
+      ),
     ).toBe(true);
     expect(logs.some((line) => line.includes("[status] tokens(total)"))).toBe(
       true,

@@ -32,6 +32,7 @@ export interface RuntimeConfig {
   modelBaseUrls: Record<string, string>;
   modelApiKeys: Record<string, string>;
   systemPrompt: string;
+  agentInstructionPath: string | null;
   maxToolRounds: number;
   maxPreviewChars: number;
   enforceToolCallFirstRound: boolean;
