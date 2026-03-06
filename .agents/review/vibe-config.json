@@ -1,0 +1,21 @@
+{
+  "instruction_file": "AGENTS.md",
+  "tool_runtime": {
+    "write_scope": "workspace-write",
+    "policy": {
+      "default_policy": "allow"
+    }
+  },
+  "models": {
+    "qwen2.5-coder-7b-instruct-mlx": {
+      "context_length": 32768,
+      "base_url": "http://localhost:1234/v1",
+      "api_key": "lmstudio"
+    },
+    "qwen2.5-coder-14b-instruct-128k": {
+      "context_length": 32768,
+      "base_url": "http://192.168.10.27:1234/v1",
+      "api_key": "lmstudio"
+    }
+  }
+}

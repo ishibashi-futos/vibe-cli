@@ -4,9 +4,9 @@ import {
   type FileAccessMode,
   type ToolPolicy,
 } from "agent-tools-ts";
-import { readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import type { ToolRuntime } from "../domain/types";
+import { loadVibeConfigFile } from "../config/vibe-config";
 
 const DEFAULT_WRITE_SCOPE: FileAccessMode = "workspace-write";
 const DEFAULT_POLICY: ToolPolicy = {
@@ -23,75 +23,77 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function loadToolRuntimeConfig(workspaceRoot: string): LoadedToolRuntimeConfig {
-  const filePath = join(workspaceRoot, ".agents", "vibe-config.json");
-  try {
-    const raw = readFileSync(filePath, "utf8");
-    const parsed = JSON.parse(raw);
-    if (!isRecord(parsed)) {
-      return {
-        writeScope: DEFAULT_WRITE_SCOPE,
-        policy: DEFAULT_POLICY,
-      };
-    }
-
-    const toolRuntime = parsed.tool_runtime;
-    if (!isRecord(toolRuntime)) {
-      return {
-        writeScope: DEFAULT_WRITE_SCOPE,
-        policy: DEFAULT_POLICY,
-      };
-    }
-
-    const writeScopeRaw = toolRuntime.write_scope;
-    const writeScope: FileAccessMode =
-      writeScopeRaw === "read-only" ||
-      writeScopeRaw === "workspace-write" ||
-      writeScopeRaw === "unrestricted"
-        ? writeScopeRaw
-        : DEFAULT_WRITE_SCOPE;
-
-    const policyRaw = toolRuntime.policy;
-    if (!isRecord(policyRaw)) {
-      return {
-        writeScope,
-        policy: DEFAULT_POLICY,
-      };
-    }
-
-    const defaultPolicyRaw = policyRaw.default_policy;
-    const defaultPolicy: "allow" | "deny" =
-      defaultPolicyRaw === "allow" || defaultPolicyRaw === "deny"
-        ? defaultPolicyRaw
-        : DEFAULT_POLICY.defaultPolicy;
-
-    const toolsRaw = policyRaw.tools;
-    const tools: ToolPolicy["tools"] = {};
-    if (isRecord(toolsRaw)) {
-      for (const [name, value] of Object.entries(toolsRaw)) {
-        if (value === "allow" || value === "deny") {
-          tools[name as keyof ToolPolicy["tools"]] = value;
-        }
-      }
-    }
-
-    return {
-      writeScope,
-      policy: {
-        tools,
-        defaultPolicy,
-      },
-    };
-  } catch {
+function loadToolRuntimeConfig(
+  workspaceRoot: string,
+  configFilePath: string | null = null,
+): LoadedToolRuntimeConfig {
+  const loaded = loadVibeConfigFile(workspaceRoot, configFilePath);
+  if (!loaded.parsed) {
     return {
       writeScope: DEFAULT_WRITE_SCOPE,
       policy: DEFAULT_POLICY,
     };
   }
+
+  const toolRuntime = loaded.parsed.tool_runtime;
+  if (!isRecord(toolRuntime)) {
+    return {
+      writeScope: DEFAULT_WRITE_SCOPE,
+      policy: DEFAULT_POLICY,
+    };
+  }
+
+  const writeScopeRaw = toolRuntime.write_scope;
+  const writeScope: FileAccessMode =
+    writeScopeRaw === "read-only" ||
+    writeScopeRaw === "workspace-write" ||
+    writeScopeRaw === "unrestricted"
+      ? writeScopeRaw
+      : DEFAULT_WRITE_SCOPE;
+
+  const policyRaw = toolRuntime.policy;
+  if (!isRecord(policyRaw)) {
+    return {
+      writeScope,
+      policy: DEFAULT_POLICY,
+    };
+  }
+
+  const defaultPolicyRaw = policyRaw.default_policy;
+  const defaultPolicy: "allow" | "deny" =
+    defaultPolicyRaw === "allow" || defaultPolicyRaw === "deny"
+      ? defaultPolicyRaw
+      : DEFAULT_POLICY.defaultPolicy;
+
+  const toolsRaw = policyRaw.tools;
+  const tools: ToolPolicy["tools"] = {};
+  if (isRecord(toolsRaw)) {
+    for (const [name, value] of Object.entries(toolsRaw)) {
+      if (value === "allow" || value === "deny") {
+        tools[name as keyof ToolPolicy["tools"]] = value;
+      }
+    }
+  }
+
+  return {
+    writeScope,
+    policy: {
+      tools,
+      defaultPolicy,
+    },
+  };
 }
 
-export function createDefaultToolRuntime(workspaceRoot: string): ToolRuntime {
-  const loaded = loadToolRuntimeConfig(workspaceRoot);
+export function createDefaultToolRuntime(
+  workspaceRoot: string,
+  options: {
+    configFilePath?: string | null;
+  } = {},
+): ToolRuntime {
+  const loaded = loadToolRuntimeConfig(
+    workspaceRoot,
+    options.configFilePath ?? null,
+  );
   const toolContext = createToolContext({
     workspaceRoot,
     writeScope: loaded.writeScope,

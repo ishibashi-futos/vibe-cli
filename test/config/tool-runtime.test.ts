@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createDefaultToolRuntime } from "../../src/infra/tool-runtime";
 
 describe("tool-runtime config", () => {
   function withWorkspace(
     vibeConfig: string | null,
+    files: Record<string, string>,
     run: (workspaceRoot: string) => void,
   ): void {
     const workspaceRoot = mkdtempSync(
@@ -20,6 +21,10 @@ describe("tool-runtime config", () => {
           vibeConfig,
         );
       }
+      for (const [path, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(workspaceRoot, path)), { recursive: true });
+        writeFileSync(join(workspaceRoot, path), content);
+      }
       run(workspaceRoot);
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
@@ -27,7 +32,7 @@ describe("tool-runtime config", () => {
   }
 
   test("uses default allow policy when tool_runtime is not configured", () => {
-    withWorkspace(JSON.stringify({ models: {} }), (workspaceRoot) => {
+    withWorkspace(JSON.stringify({ models: {} }), {}, (workspaceRoot) => {
       const runtime = createDefaultToolRuntime(workspaceRoot);
       const allowed = runtime.getAllowedToolNames();
       const executionEnv = runtime.getExecutionEnvironment?.();
@@ -57,6 +62,7 @@ describe("tool-runtime config", () => {
           },
         },
       }),
+      {},
       (workspaceRoot) => {
         const runtime = createDefaultToolRuntime(workspaceRoot);
 
@@ -79,12 +85,39 @@ describe("tool-runtime config", () => {
           },
         },
       }),
+      {},
       (workspaceRoot) => {
         const runtime = createDefaultToolRuntime(workspaceRoot);
         const allowed = runtime.getAllowedToolNames();
 
         expect(allowed).toContain("read_file");
         expect(allowed).toContain("write_file");
+      },
+    );
+  });
+
+  test("loads tool_runtime from custom config file path", () => {
+    withWorkspace(
+      JSON.stringify({ models: {} }),
+      {
+        ".agents/review/vibe-config.json": JSON.stringify({
+          models: {},
+          tool_runtime: {
+            write_scope: "read-only",
+            policy: {
+              default_policy: "deny",
+              tools: {
+                read_file: "allow",
+              },
+            },
+          },
+        }),
+      },
+      (workspaceRoot) => {
+        const runtime = createDefaultToolRuntime(workspaceRoot, {
+          configFilePath: ".agents/review/vibe-config.json",
+        });
+        expect(runtime.getAllowedToolNames()).toEqual(["read_file"]);
       },
     );
   });

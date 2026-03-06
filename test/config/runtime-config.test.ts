@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadAppConfig } from "../../src/config/runtime-config";
 
 describe("runtime-config", () => {
@@ -18,6 +18,7 @@ describe("runtime-config", () => {
         writeFileSync(join(cwd, ".agents", "vibe-config.json"), vibeConfig);
       }
       for (const [path, content] of Object.entries(files)) {
+        mkdirSync(dirname(join(cwd, path)), { recursive: true });
         writeFileSync(join(cwd, path), content);
       }
       process.chdir(cwd);
@@ -172,6 +173,51 @@ describe("runtime-config", () => {
         expect(config.agentInstructionPath).toBe(
           join(process.cwd(), "AGENTS.md"),
         );
+      },
+    );
+  });
+
+  test("loads from custom config file path and resolves instruction relative to that config", () => {
+    withTestCwd(
+      JSON.stringify({ models: {} }),
+      {
+        ".agents/review/vibe-config.json": JSON.stringify({
+          models: {},
+          instruction_file: "AGENTS.md",
+        }),
+        ".agents/review/AGENTS.md": "review instructions",
+        "AGENTS.md": "root instructions",
+      },
+      () => {
+        const config = loadAppConfig({}, "default-system", {
+          configFilePath: ".agents/review/vibe-config.json",
+        });
+        expect(config.systemPrompt).toBe(
+          "default-system\n\nreview instructions",
+        );
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), ".agents/review/AGENTS.md"),
+        );
+      },
+    );
+  });
+
+  test("falls back to workspace AGENTS.md when custom config instruction is missing", () => {
+    withTestCwd(
+      JSON.stringify({ models: {} }),
+      {
+        ".agents/review/vibe-config.json": JSON.stringify({
+          models: {},
+          instruction_file: "AGENTS.md",
+        }),
+        "AGENTS.md": "root instructions",
+      },
+      () => {
+        const config = loadAppConfig({}, "default-system", {
+          configFilePath: ".agents/review/vibe-config.json",
+        });
+        expect(config.systemPrompt).toBe("default-system\n\nroot instructions");
+        expect(config.agentInstructionPath).toBe(join(process.cwd(), "AGENTS.md"));
       },
     );
   });
