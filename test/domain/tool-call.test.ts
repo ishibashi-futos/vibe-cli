@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildSecurityBypassDeclinedMessage,
   buildToolFailure,
   buildToolUnavailableMessage,
   isToolAvailable,
+  isSecurityRestrictedInvokeError,
   parseToolArgs,
 } from "../../src/domain/tool-call";
 
@@ -49,5 +51,22 @@ describe("tool-call", () => {
       reason: "tool_invoke_error",
       message: "boom",
     });
+  });
+
+  test("isSecurityRestrictedInvokeError detects TOOL_NOT_ALLOWED", () => {
+    expect(
+      isSecurityRestrictedInvokeError(
+        new Error("TOOL_NOT_ALLOWED: [Security Policy] Access denied"),
+      ),
+    ).toBe(true);
+    expect(isSecurityRestrictedInvokeError(new Error("random failure"))).toBe(
+      false,
+    );
+  });
+
+  test("buildSecurityBypassDeclinedMessage returns clear reason", () => {
+    expect(buildSecurityBypassDeclinedMessage("exec_command")).toBe(
+      "SecurityBypass declined by user for tool: exec_command",
+    );
   });
 });

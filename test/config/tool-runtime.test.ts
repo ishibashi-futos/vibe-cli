@@ -121,4 +121,45 @@ describe("tool-runtime config", () => {
       },
     );
   });
+
+  test("can invoke denied tool with securityBypass option", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), "vibe-tool-runtime-test-"));
+    try {
+      mkdirSync(join(workspaceRoot, ".agents"), { recursive: true });
+      writeFileSync(
+        join(workspaceRoot, ".agents", "vibe-config.json"),
+        JSON.stringify({
+          models: {},
+          tool_runtime: {
+            write_scope: "workspace-write",
+            policy: {
+              default_policy: "deny",
+              tools: {
+                read_file: "allow",
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(join(workspaceRoot, "README.md"), "hello");
+
+      const runtime = createDefaultToolRuntime(workspaceRoot);
+
+      await expect(
+        runtime.invoke("exec_command", { command: ["pwd"], cwd: "." }),
+      ).rejects.toThrow("TOOL_NOT_ALLOWED");
+
+      await expect(
+        runtime.invoke(
+          "exec_command",
+          { command: ["pwd"], cwd: "." },
+          { securityBypass: true },
+        ),
+      ).resolves.toMatchObject({
+        exit_code: 0,
+      });
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true });
+    }
+  });
 });

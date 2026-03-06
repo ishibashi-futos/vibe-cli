@@ -74,6 +74,23 @@ export function createConsoleIO(): ConsoleIO {
         })),
       );
     },
+    async selectSecurityBypass(toolName, errorMessage) {
+      const selected = await select(
+        `[security] ${toolName} was blocked.\n${errorMessage}\nRetry with SecurityBypass?`,
+        [
+          {
+            label: "Bypass and retry",
+            value: "bypass",
+          },
+          {
+            label: "Do not bypass",
+            value: "no-bypass",
+          },
+        ],
+      );
+
+      return selected === "bypass";
+    },
     updateTokenStatus(snapshot) {
       tokenStatus = snapshot;
     },

@@ -26,6 +26,8 @@ function createTestIO(inputs: ReadonlyArray<string>) {
   const spinnerMessages: string[] = [];
   let resetCount = 0;
   let selectedModel = "alt-model";
+  let selectSecurityBypassResult = false;
+  let securityPrompts: Array<{ toolName: string; errorMessage: string }> = [];
   let lastModelOptions: string[] = [];
   let lastCurrentModel = "";
 
@@ -60,6 +62,10 @@ function createTestIO(inputs: ReadonlyArray<string>) {
       lastCurrentModel = currentModel;
       return selectedModel;
     },
+    async selectSecurityBypass(toolName, errorMessage) {
+      securityPrompts.push({ toolName, errorMessage });
+      return selectSecurityBypassResult;
+    },
     updateTokenStatus(snapshot) {
       tokenSnapshots.push(snapshot);
     },
@@ -82,6 +88,10 @@ function createTestIO(inputs: ReadonlyArray<string>) {
     setSelectedModel: (model: string) => {
       selectedModel = model;
     },
+    setSelectSecurityBypassResult: (value: boolean) => {
+      selectSecurityBypassResult = value;
+    },
+    getSecurityPrompts: () => securityPrompts,
     getLastModelOptions: () => lastModelOptions,
     getLastCurrentModel: () => lastCurrentModel,
     getResetCount: () => resetCount,
@@ -439,6 +449,90 @@ describe("runChatLoop", () => {
     expect(
       logs.some((line) =>
         line.includes("[status] explicit_deny_tools=exec_command,write_file"),
+      ),
+    ).toBe(true);
+  });
+
+  test("retries blocked tool call with SecurityBypass when user approves", async () => {
+    const {
+      io,
+      logs,
+      setSelectSecurityBypassResult,
+      getSecurityPrompts,
+      spinnerMessages,
+    } = createTestIO(["hello", "/exit"]);
+    setSelectSecurityBypassResult(true);
+
+    let requestCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        requestCount += 1;
+
+        if (requestCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: { name: "exec_command", arguments: "{}" },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(5),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content: "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(5),
+        };
+      },
+    };
+
+    const invokeOptions: Array<{ securityBypass?: boolean }> = [];
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["exec_command"];
+      },
+      async invoke(_toolName, _args, options) {
+        invokeOptions.push(options ?? {});
+        if (!options?.securityBypass) {
+          throw new Error(
+            'TOOL_NOT_ALLOWED: [Security Policy] Access denied for tool: "exec_command"',
+          );
+        }
+        return { ok: true };
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig(),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(getSecurityPrompts()).toHaveLength(1);
+    expect(getSecurityPrompts()[0]?.toolName).toBe("exec_command");
+    expect(invokeOptions).toEqual([{}, { securityBypass: true }]);
+    expect(
+      logs.some((line) => line.includes("retrying exec_command with SecurityBypass")),
+    ).toBe(true);
+    expect(
+      spinnerMessages.some((message) =>
+        message.includes("[tool] running exec_command (SecurityBypass)"),
       ),
     ).toBe(true);
   });

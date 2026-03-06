@@ -80,6 +80,9 @@ export interface ToolRuntime {
   invoke(
     toolName: string,
     args: Record<string, unknown>,
+    options?: {
+      securityBypass?: boolean;
+    },
   ): Promise<Record<string, unknown>>;
 }
 
@@ -89,6 +92,7 @@ export interface ConsoleIO {
     options?: ReadUserInputOptions,
   ): Promise<ReadUserInputResult>;
   selectModel(models: string[], currentModel: string): Promise<string>;
+  selectSecurityBypass(toolName: string, errorMessage: string): Promise<boolean>;
   runWithSpinner<T>(message: string, task: () => Promise<T>): Promise<T>;
   updateTokenStatus(snapshot: TokenStatusSnapshot): void;
   resetSessionUiState(): void;
@@ -99,7 +103,8 @@ export interface ConsoleIO {
 export type ToolFailureReason =
   | "invalid_arguments_json"
   | "tool_not_available"
-  | "tool_invoke_error";
+  | "tool_invoke_error"
+  | "security_bypass_declined";
 
 export interface ToolFailure {
   status: "failure";

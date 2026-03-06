@@ -6,9 +6,11 @@ import {
 } from "../domain/message-state";
 import { toPreview } from "../domain/policies";
 import {
+  buildSecurityBypassDeclinedMessage,
   buildToolFailure,
   buildToolUnavailableMessage,
   isToolAvailable,
+  isSecurityRestrictedInvokeError,
   parseToolArgs,
 } from "../domain/tool-call";
 import type {
@@ -521,9 +523,48 @@ export async function runChatLoop({
             io.writeLine(`[tool] response from ${toolName}:`);
             io.writeLine(toPreview(result, config.maxPreviewChars));
           } catch (error) {
-            const invokeError =
+            let failureReason: "tool_invoke_error" | "security_bypass_declined" =
+              "tool_invoke_error";
+            let invokeError =
               error instanceof Error ? error.message : String(error);
-            const failure = buildToolFailure("tool_invoke_error", invokeError);
+
+            if (isSecurityRestrictedInvokeError(error)) {
+              const shouldBypass = await io.selectSecurityBypass(
+                toolName,
+                invokeError,
+              );
+
+              if (shouldBypass) {
+                io.writeLine(
+                  `[tool] retrying ${toolName} with SecurityBypass`,
+                );
+                try {
+                  const bypassedResult = await io.runWithSpinner(
+                    `[tool] running ${toolName} (SecurityBypass)`,
+                    () =>
+                      toolRuntime.invoke(toolName, parsedArgs.value, {
+                        securityBypass: true,
+                      }),
+                  );
+                  messages = withToolResult(messages, toolCall.id, bypassedResult);
+                  io.writeLine(`[tool] response from ${toolName}:`);
+                  io.writeLine(
+                    toPreview(bypassedResult, config.maxPreviewChars),
+                  );
+                  continue;
+                } catch (retryError) {
+                  invokeError =
+                    retryError instanceof Error
+                      ? retryError.message
+                      : String(retryError);
+                }
+              } else {
+                failureReason = "security_bypass_declined";
+                invokeError = buildSecurityBypassDeclinedMessage(toolName);
+              }
+            }
+
+            const failure = buildToolFailure(failureReason, invokeError);
             messages = withToolResult(messages, toolCall.id, failure);
             io.writeLine(`[tool] error from ${toolName}: ${invokeError}`);
           }

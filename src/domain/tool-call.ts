@@ -49,3 +49,24 @@ export function buildToolUnavailableMessage(
 ): string {
   return `Tool '${toolName}' is not available. Available tools: ${availableToolNames.join(", ")}`;
 }
+
+function hasToolNotAllowedCode(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  return "code" in value && value.code === "TOOL_NOT_ALLOWED";
+}
+
+export function isSecurityRestrictedInvokeError(error: unknown): boolean {
+  if (hasToolNotAllowedCode(error)) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("TOOL_NOT_ALLOWED");
+}
+
+export function buildSecurityBypassDeclinedMessage(toolName: string): string {
+  return `SecurityBypass declined by user for tool: ${toolName}`;
+}

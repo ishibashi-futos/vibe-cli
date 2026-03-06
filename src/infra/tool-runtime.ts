@@ -1,4 +1,5 @@
 import {
+  SecurityBypass,
   createAgentToolkit,
   createToolContext,
   type FileAccessMode,
@@ -134,11 +135,15 @@ export function createDefaultToolRuntime(
         explicitDenyTools,
       };
     },
-    async invoke(toolName, args) {
-      const result = await toolkit.invoke(
-        toolName as Parameters<typeof toolkit.invoke>[0],
-        args,
-      );
+    async invoke(toolName, args, options) {
+      const invokeTool = () =>
+        toolkit.invoke(
+          toolName as Parameters<typeof toolkit.invoke>[0],
+          args,
+        );
+      const result = options?.securityBypass
+        ? await SecurityBypass.run(invokeTool)
+        : await invokeTool();
 
       return (result.content as Record<string, unknown>) ?? {};
     },
