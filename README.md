@@ -12,6 +12,15 @@ bun install
 bun run src/cli/index.ts
 ```
 
+## Build Binary
+
+```bash
+bun run build:binary
+```
+
+- Output: `dist/vibe-cli`
+- Override output path in CI or locally: `bun run build:binary -- --outfile dist/vibe-cli-darwin-arm64`
+
 ## Exec Mode
 
 - `exec` runs one autonomous task without interactive confirmation/input.

@@ -18,3 +18,4 @@
 - [x] `bypassPermissions` に対応して、制約で止められた場合に一時的なバイパスができるようにする。
 - [ ] `ToDo` 管理ツールができたら、ユーザー要求 > ToDo作成 > 実行 > VERIRYのループを組み込む
 - [ ] `hooks` 機能の追加
+- [ ] `~/.config/vibe-cli/vibe-config.json` の有効化と、カレントディレクトリ設定とのマージ
