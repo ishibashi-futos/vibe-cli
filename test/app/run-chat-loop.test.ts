@@ -270,13 +270,11 @@ describe("runChatLoop", () => {
     });
 
     expect(getResetCount()).toBe(1);
+    expect(logs.some((line) => line.includes("started a new session"))).toBe(
+      true,
+    );
     expect(
-      logs.some((line) => line.includes("started a new session")),
-    ).toBe(true);
-    expect(
-      logs.some((line) =>
-        line.includes("instruction_file=/tmp/AGENTS.md"),
-      ),
+      logs.some((line) => line.includes("instruction_file=/tmp/AGENTS.md")),
     ).toBe(true);
     expect(logs.some((line) => line.includes("tokens(total)"))).toBe(true);
     expect(tokenSnapshots.at(-1)?.cumulativeUsage.total_tokens).toBe(0);
@@ -402,9 +400,7 @@ describe("runChatLoop", () => {
     expect(getLastCurrentModel()).toBe("test-model");
     expect(getLastModelOptions()).toEqual(["test-model", "alt-model"]);
     expect(
-      logs.some((line) =>
-        line.includes("switched model to alt-model"),
-      ),
+      logs.some((line) => line.includes("switched model to alt-model")),
     ).toBe(true);
     expect(tokenSnapshots.at(-1)?.model).toBe("alt-model");
     expect(tokenSnapshots.at(-1)?.tokenLimit).toBe(2000);
@@ -448,12 +444,12 @@ describe("runChatLoop", () => {
       io,
     });
 
-    expect(
-      logs.some((line) => line.includes("write_scope=read-only")),
-    ).toBe(true);
-    expect(
-      logs.some((line) => line.includes("default_policy=deny")),
-    ).toBe(true);
+    expect(logs.some((line) => line.includes("write_scope=read-only"))).toBe(
+      true,
+    );
+    expect(logs.some((line) => line.includes("default_policy=deny"))).toBe(
+      true,
+    );
     expect(
       logs.some((line) =>
         line.includes("explicit_deny_tools=exec_command,write_file"),

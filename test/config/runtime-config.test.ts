@@ -42,7 +42,7 @@ describe("runtime-config", () => {
       }),
       {},
       () => {
-        const config = loadAppConfig({}, "default-system");
+        const config = loadAppConfig("default-system");
 
         expect(config.baseUrl).toBe("http://localhost:1234/v1");
         expect(config.apiKey).toBe("lmstudio");
@@ -67,9 +67,15 @@ describe("runtime-config", () => {
     );
   });
 
-  test("uses explicit env values", () => {
+  test("loads runtime settings from .agents/vibe-config.json", () => {
     withTestCwd(
       JSON.stringify({
+        default_model: "gpt-x",
+        system_prompt: "sys",
+        enforce_tool_call_first_round: false,
+        max_tool_rounds: 24,
+        max_preview_chars: 2048,
+        mention_max_lines: 42,
         models: {
           "qwen2.5-coder-7b-instruct-mlx": {
             context_length: 32768,
@@ -85,23 +91,17 @@ describe("runtime-config", () => {
       }),
       {},
       () => {
-        const config = loadAppConfig(
-          {
-            OPENAI_BASE_URL: "http://localhost:1234/v1",
-            OPENAI_API_KEY: "key",
-            OPENAI_MODEL: "gpt-x",
-            SYSTEM_PROMPT: "sys",
-            ENFORCE_TOOL_CALL_FIRST_ROUND: "0",
-          },
-          "default-system",
-        );
+        const config = loadAppConfig("default-system");
 
         expect(config.baseUrl).toBe("http://localhost:1234/v1");
-        expect(config.apiKey).toBe("key");
+        expect(config.apiKey).toBe("lmstudio");
         expect(config.model).toBe("gpt-x");
         expect(config.systemPrompt).toBe("sys");
         expect(config.agentInstructionPath).toBeNull();
         expect(config.enforceToolCallFirstRound).toBe(false);
+        expect(config.maxToolRounds).toBe(24);
+        expect(config.maxPreviewChars).toBe(2048);
+        expect(config.mentionMaxLines).toBe(42);
         expect(config.modelTokenLimit).toBe(100000);
         expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
         expect(config.modelApiKeys["gpt-x"]).toBe("gpt-x-key");
@@ -109,9 +109,49 @@ describe("runtime-config", () => {
     );
   });
 
+  test("falls back to the first configured model when default_model is omitted", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {
+          "first-model": {
+            context_length: 8192,
+          },
+          "second-model": {
+            context_length: 16384,
+          },
+        },
+      }),
+      {},
+      () => {
+        const config = loadAppConfig("default-system");
+        expect(config.model).toBe("first-model");
+        expect(config.modelTokenLimit).toBe(8192);
+      },
+    );
+  });
+
+  test("throws when default_model is not defined under models", () => {
+    withTestCwd(
+      JSON.stringify({
+        default_model: "missing-model",
+        models: {
+          "first-model": {
+            context_length: 8192,
+          },
+        },
+      }),
+      {},
+      () => {
+        expect(() => loadAppConfig("default-system")).toThrow(
+          'invalid .agents/vibe-config.json: default_model "missing-model" is not defined under models',
+        );
+      },
+    );
+  });
+
   test("falls back safely when .agents/vibe-config.json is missing", () => {
     withTestCwd(null, {}, () => {
-      const config = loadAppConfig({}, "default-system");
+      const config = loadAppConfig("default-system");
       expect(config.modelContextLengths).toEqual({});
       expect(config.modelBaseUrls).toEqual({});
       expect(config.modelApiKeys).toEqual({});
@@ -125,7 +165,7 @@ describe("runtime-config", () => {
       JSON.stringify({ models: {} }),
       { "AGENTS.md": "project instructions" },
       () => {
-        const config = loadAppConfig({}, "default-system");
+        const config = loadAppConfig("default-system");
         expect(config.systemPrompt).toBe(
           "default-system\n\nproject instructions",
         );
@@ -147,7 +187,7 @@ describe("runtime-config", () => {
         "CLAUDE.md": "custom instructions",
       },
       () => {
-        const config = loadAppConfig({}, "default-system");
+        const config = loadAppConfig("default-system");
         expect(config.systemPrompt).toBe(
           "default-system\n\ncustom instructions",
         );
@@ -166,7 +206,7 @@ describe("runtime-config", () => {
       }),
       { "AGENTS.md": "default instructions" },
       () => {
-        const config = loadAppConfig({}, "default-system");
+        const config = loadAppConfig("default-system");
         expect(config.systemPrompt).toBe(
           "default-system\n\ndefault instructions",
         );
@@ -189,7 +229,7 @@ describe("runtime-config", () => {
         "AGENTS.md": "root instructions",
       },
       () => {
-        const config = loadAppConfig({}, "default-system", {
+        const config = loadAppConfig("default-system", {
           configFilePath: ".agents/review/vibe-config.json",
         });
         expect(config.systemPrompt).toBe(
@@ -213,7 +253,7 @@ describe("runtime-config", () => {
         "AGENTS.md": "root instructions",
       },
       () => {
-        const config = loadAppConfig({}, "default-system", {
+        const config = loadAppConfig("default-system", {
           configFilePath: ".agents/review/vibe-config.json",
         });
         expect(config.systemPrompt).toBe("default-system\n\nroot instructions");

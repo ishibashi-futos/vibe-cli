@@ -9,9 +9,6 @@ bun install
 ## Run
 
 ```bash
-OPENAI_BASE_URL=http://172.20.10.3:1234/v1 \
-OPENAI_API_KEY=lmstudio \
-OPENAI_MODEL=qwen2.5-coder-7b-instruct-mlx \
 bun run src/cli/index.ts
 ```
 
@@ -56,7 +53,13 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 
 ```json
 {
+  "default_model": "qwen2.5-coder-7b-instruct-mlx",
   "instruction_file": "CLAUDE.md",
+  "system_prompt": "Optional full system prompt override",
+  "max_tool_rounds": 12,
+  "max_preview_chars": 4000,
+  "mention_max_lines": 100,
+  "enforce_tool_call_first_round": true,
   "tool_runtime": {
     "write_scope": "workspace-write",
     "policy": {
@@ -78,11 +81,15 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 - `instruction_file` can be absolute or relative.
 - Relative `instruction_file` is resolved from the selected config file's directory.
 - If configured `instruction_file` is missing, the app falls back to workspace root `AGENTS.md`.
+- `default_model` chooses the startup model by name and must match a key under `models`.
+- If `default_model` is omitted, the first entry under `models` is used.
+- `system_prompt` is optional. If omitted, the built-in prompt is used and `instruction_file` content is appended.
+- `max_tool_rounds`, `max_preview_chars`, `mention_max_lines`, `enforce_tool_call_first_round` are optional runtime settings.
 - `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).
 - `tool_runtime.policy.default_policy` is optional: `allow | deny` (default: `allow`).
 - `tool_runtime.policy.tools` is optional per-tool override map (`allow | deny`).
 - `/model` can switch only to model names defined under `models`.
-- `base_url` / `api_key` are optional per model. If omitted, global env (`OPENAI_BASE_URL` / `OPENAI_API_KEY`) is used.
+- `base_url` / `api_key` are configured per model under `models`.
 
 ## Mentions
 

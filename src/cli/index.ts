@@ -1,7 +1,7 @@
 import { runChatLoop } from "../app/run-chat-loop";
 import { runExecTask } from "../app/run-exec-task";
 import { parseCliArgs } from "./argv";
-import { loadAppConfig } from "../config/runtime-config";
+import { loadAppConfig, type AppConfig } from "../config/runtime-config";
 import { resolveVibeConfigPath } from "../config/vibe-config";
 import { buildDefaultSystemPrompt } from "../domain/policies";
 import { createConsoleIO } from "../infra/console-io";
@@ -34,9 +34,16 @@ const defaultSystemPrompt = buildDefaultSystemPrompt(
   toolRuntime.getAllowedToolNames(),
   toolRuntime.getExecutionEnvironment?.(),
 );
-const config = loadAppConfig(process.env, defaultSystemPrompt, {
-  configFilePath: parsed.configFilePath,
-});
+let config: AppConfig;
+try {
+  config = loadAppConfig(defaultSystemPrompt, {
+    configFilePath: parsed.configFilePath,
+  });
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  io.writeError(message);
+  process.exit(1);
+}
 const completionGateway = createOpenAICompletionGateway();
 
 if (parsed.mode === "chat") {

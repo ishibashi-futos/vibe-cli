@@ -15,6 +15,13 @@ const DEFAULT_MENTION_MAX_LINES = 100;
 type ModelTokenLimitMap = Record<string, number>;
 type ModelStringMap = Record<string, string>;
 interface LoadedVibeModelConfig {
+  defaultModel: string | null;
+  systemPrompt: string | null;
+  maxToolRounds: number | null;
+  maxPreviewChars: number | null;
+  mentionMaxLines: number | null;
+  enforceToolCallFirstRound: boolean | null;
+  modelNames: string[];
   contextLengths: ModelTokenLimitMap;
   baseUrls: ModelStringMap;
   apiKeys: ModelStringMap;
@@ -26,6 +33,32 @@ interface LoadedAgentInstruction {
   path: string | null;
 }
 
+function readNonEmptyString(
+  source: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = source[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readPositiveInteger(
+  source: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = source[key];
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function readBoolean(
+  source: Record<string, unknown>,
+  key: string,
+): boolean | null {
+  const value = source[key];
+  return typeof value === "boolean" ? value : null;
+}
+
 function loadVibeModelConfig(
   cwd: string,
   configFilePath: string | null = null,
@@ -34,6 +67,13 @@ function loadVibeModelConfig(
   const parsed = loaded.parsed;
   if (!parsed) {
     return {
+      defaultModel: null,
+      systemPrompt: null,
+      maxToolRounds: null,
+      maxPreviewChars: null,
+      mentionMaxLines: null,
+      enforceToolCallFirstRound: null,
+      modelNames: [],
       contextLengths: {},
       baseUrls: {},
       apiKeys: {},
@@ -42,15 +82,29 @@ function loadVibeModelConfig(
     };
   }
 
-  const instructionFileRaw = parsed.instruction_file;
-  const instructionFile =
-    typeof instructionFileRaw === "string" && instructionFileRaw.length > 0
-      ? instructionFileRaw
-      : null;
+  const instructionFile = readNonEmptyString(parsed, "instruction_file");
+  const defaultModel =
+    readNonEmptyString(parsed, "default_model") ??
+    readNonEmptyString(parsed, "model");
+  const systemPrompt = readNonEmptyString(parsed, "system_prompt");
+  const maxToolRounds = readPositiveInteger(parsed, "max_tool_rounds");
+  const maxPreviewChars = readPositiveInteger(parsed, "max_preview_chars");
+  const mentionMaxLines = readPositiveInteger(parsed, "mention_max_lines");
+  const enforceToolCallFirstRound = readBoolean(
+    parsed,
+    "enforce_tool_call_first_round",
+  );
 
   const models = parsed.models;
   if (typeof models !== "object" || models === null || Array.isArray(models)) {
     return {
+      defaultModel,
+      systemPrompt,
+      maxToolRounds,
+      maxPreviewChars,
+      mentionMaxLines,
+      enforceToolCallFirstRound,
+      modelNames: [],
       contextLengths: {},
       baseUrls: {},
       apiKeys: {},
@@ -62,6 +116,7 @@ function loadVibeModelConfig(
   const contextLengths: ModelTokenLimitMap = {};
   const baseUrls: ModelStringMap = {};
   const apiKeys: ModelStringMap = {};
+  const modelNames: string[] = [];
   for (const [model, definition] of Object.entries(
     models as Record<string, unknown>,
   )) {
@@ -72,6 +127,8 @@ function loadVibeModelConfig(
     ) {
       continue;
     }
+
+    modelNames.push(model);
 
     const contextLength = (definition as Record<string, unknown>)
       .context_length;
@@ -94,6 +151,13 @@ function loadVibeModelConfig(
     }
   }
   return {
+    defaultModel,
+    systemPrompt,
+    maxToolRounds,
+    maxPreviewChars,
+    mentionMaxLines,
+    enforceToolCallFirstRound,
+    modelNames,
     contextLengths,
     baseUrls,
     apiKeys,
@@ -143,18 +207,35 @@ function mergeSystemPrompt(
 
 export interface AppConfig extends RuntimeConfig {}
 
+function resolveConfiguredModel(loaded: LoadedVibeModelConfig): string {
+  if (loaded.defaultModel !== null) {
+    if (!loaded.modelNames.includes(loaded.defaultModel)) {
+      throw new Error(
+        `invalid .agents/vibe-config.json: default_model "${loaded.defaultModel}" is not defined under models`,
+      );
+    }
+    return loaded.defaultModel;
+  }
+
+  return (
+    loaded.modelNames[0] ??
+    Object.keys(loaded.baseUrls)[0] ??
+    Object.keys(loaded.apiKeys)[0] ??
+    DEFAULT_MODEL
+  );
+}
+
 export function loadAppConfig(
-  env: NodeJS.ProcessEnv,
   defaultSystemPrompt: string,
   options: {
     configFilePath?: string | null;
   } = {},
 ): AppConfig {
   const cwd = process.cwd();
-  const model = env.OPENAI_MODEL ?? DEFAULT_MODEL;
   const loaded = loadVibeModelConfig(cwd, options.configFilePath ?? null);
+  const model = resolveConfiguredModel(loaded);
   const loadedInstruction =
-    typeof env.SYSTEM_PROMPT === "string"
+    loaded.systemPrompt !== null
       ? { content: null, path: null }
       : loadAgentInstruction(
           cwd,
@@ -167,18 +248,18 @@ export function loadAppConfig(
   );
 
   return {
-    baseUrl: env.OPENAI_BASE_URL ?? DEFAULT_BASE_URL,
-    apiKey: env.OPENAI_API_KEY ?? DEFAULT_API_KEY,
+    baseUrl: DEFAULT_BASE_URL,
+    apiKey: DEFAULT_API_KEY,
     model,
     modelContextLengths: loaded.contextLengths,
     modelBaseUrls: loaded.baseUrls,
     modelApiKeys: loaded.apiKeys,
-    systemPrompt: env.SYSTEM_PROMPT ?? mergedSystemPrompt,
+    systemPrompt: loaded.systemPrompt ?? mergedSystemPrompt,
     agentInstructionPath: loadedInstruction.path,
-    maxToolRounds: DEFAULT_MAX_TOOL_ROUNDS,
-    maxPreviewChars: DEFAULT_MAX_PREVIEW_CHARS,
-    enforceToolCallFirstRound: env.ENFORCE_TOOL_CALL_FIRST_ROUND !== "0",
+    maxToolRounds: loaded.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS,
+    maxPreviewChars: loaded.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,
+    enforceToolCallFirstRound: loaded.enforceToolCallFirstRound ?? true,
     modelTokenLimit: loaded.contextLengths[model] ?? null,
-    mentionMaxLines: DEFAULT_MENTION_MAX_LINES,
+    mentionMaxLines: loaded.mentionMaxLines ?? DEFAULT_MENTION_MAX_LINES,
   };
 }
