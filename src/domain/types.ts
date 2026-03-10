@@ -96,7 +96,9 @@ export interface ConsoleIO {
   runWithSpinner<T>(message: string, task: () => Promise<T>): Promise<T>;
   updateTokenStatus(snapshot: TokenStatusSnapshot): void;
   resetSessionUiState(): void;
-  writeLine(message: string): void;
+  writeStatus(message: string): void;
+  writeToolCall(name: string, args?: unknown): void;
+  writeOutput(message: string): void;
   writeError(message: string): void;
 }
 

@@ -100,20 +100,20 @@ function formatStatus(params: {
     toolRuntimeSecurity,
   } = params;
   const lines = [
-    `[status] model=${model}`,
-    `[status] base_url=${baseUrl}`,
-    `[status] instruction_file=${agentInstructionPath ?? "N/A"}`,
-    `[status] configured_models=${configuredModelCount}`,
-    `[status] messages=${messageCount}`,
-    `[status] tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
-    `[status] tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
+    `model=${model}`,
+    `base_url=${baseUrl}`,
+    `instruction_file=${agentInstructionPath ?? "N/A"}`,
+    `configured_models=${configuredModelCount}`,
+    `messages=${messageCount}`,
+    `tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
+    `tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
   ];
 
   if (toolRuntimeSecurity) {
-    lines.push(`[status] write_scope=${toolRuntimeSecurity.writeScope}`);
-    lines.push(`[status] default_policy=${toolRuntimeSecurity.defaultPolicy}`);
+    lines.push(`write_scope=${toolRuntimeSecurity.writeScope}`);
+    lines.push(`default_policy=${toolRuntimeSecurity.defaultPolicy}`);
     lines.push(
-      `[status] explicit_deny_tools=${toolRuntimeSecurity.explicitDenyTools.length > 0 ? toolRuntimeSecurity.explicitDenyTools.join(",") : "none"}`,
+      `explicit_deny_tools=${toolRuntimeSecurity.explicitDenyTools.length > 0 ? toolRuntimeSecurity.explicitDenyTools.join(",") : "none"}`,
     );
   }
 
@@ -121,7 +121,7 @@ function formatStatus(params: {
     const ratio = ((cumulativeUsage.total_tokens / tokenLimit) * 100).toFixed(
       1,
     );
-    lines.push(`[status] token_limit=${tokenLimit} (${ratio}%)`);
+    lines.push(`token_limit=${tokenLimit} (${ratio}%)`);
   }
 
   return lines;
@@ -221,9 +221,11 @@ export async function runChatLoop({
     tokenLimit: resolveTokenLimit(currentModel),
   });
 
-  io.writeLine(`Chat loop started. model=${currentModel}`);
-  io.writeLine("Type /exit to quit.");
-  io.writeLine("Submit with Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux).");
+  io.writeStatus(`Chat loop started. model=${currentModel}`);
+  io.writeStatus("Type /exit to quit.");
+  io.writeStatus(
+    "Submit with Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux).",
+  );
 
   while (true) {
     let consumedSlashCommand = false;
@@ -236,7 +238,7 @@ export async function runChatLoop({
           callback: () => {
             consumedSlashCommand = true;
             for (const line of HELP_LINES) {
-              io.writeLine(line);
+              io.writeStatus(line);
             }
           },
         },
@@ -257,7 +259,7 @@ export async function runChatLoop({
               toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
             });
             for (const line of statusLines) {
-              io.writeLine(line);
+              io.writeStatus(line);
             }
           },
         },
@@ -296,8 +298,8 @@ export async function runChatLoop({
               cumulativeUsage,
               tokenLimit: resolveTokenLimit(currentModel),
             });
-            io.writeLine(
-              `[status] switched model to ${currentModel} (base_url=${currentBaseUrl})`,
+            io.writeStatus(
+              `switched model to ${currentModel} (base_url=${currentBaseUrl})`,
             );
           },
         },
@@ -317,7 +319,7 @@ export async function runChatLoop({
               cumulativeUsage,
               tokenLimit: resolveTokenLimit(currentModel),
             });
-            io.writeLine("[status] started a new session");
+            io.writeStatus("started a new session");
           },
         },
         {
@@ -326,7 +328,7 @@ export async function runChatLoop({
           callback: () => {
             consumedSlashCommand = true;
             shouldExit = true;
-            io.writeLine("See you again!");
+            io.writeStatus("See you again!");
           },
         },
         {
@@ -335,7 +337,7 @@ export async function runChatLoop({
           callback: () => {
             consumedSlashCommand = true;
             shouldExit = true;
-            io.writeLine("See you again!");
+            io.writeStatus("See you again!");
           },
         },
       ] satisfies SlashCommand[],
@@ -409,8 +411,8 @@ export async function runChatLoop({
       let printedFinal = false;
 
       for (let round = 0; round < config.maxToolRounds; round++) {
-        io.writeLine(
-          `[status] thinking... (round ${round + 1}/${config.maxToolRounds})`,
+        io.writeStatus(
+          `thinking... (round ${round + 1}/${config.maxToolRounds})`,
         );
 
         const {
@@ -445,13 +447,13 @@ export async function runChatLoop({
         }
 
         if (retriedWithRequired) {
-          io.writeLine(
-            "[status] no tool call in round 1, retrying with tool_choice=required",
+          io.writeStatus(
+            "no tool call in round 1, retrying with tool_choice=required",
           );
         }
 
         if (!assistantMessage) {
-          io.writeLine("[assistant] (empty response)");
+          io.writeStatus("assistant returned empty response");
           printedFinal = true;
           break;
         }
@@ -463,9 +465,11 @@ export async function runChatLoop({
           messages = withAssistantFinalMessage(messages, assistantText);
 
           if (!assistantText) {
-            io.writeLine("[assistant] (empty response)");
+            io.writeStatus("assistant returned empty response");
           } else {
-            io.writeLine(`\n${assistantText}\n`);
+            io.writeOutput("");
+            io.writeOutput(assistantText);
+            io.writeOutput("");
           }
 
           printedFinal = true;
@@ -485,9 +489,9 @@ export async function runChatLoop({
 
           const toolName = toolCall.function.name;
 
-          io.writeLine(`\n[tool] calling ${toolName}`);
-          io.writeLine(
-            `[tool] args: ${toPreview(toolCall.function.arguments, config.maxPreviewChars)}`,
+          io.writeToolCall(toolName);
+          io.writeOutput(
+            toPreview(toolCall.function.arguments, config.maxPreviewChars),
           );
 
           const parsedArgs = parseToolArgs(toolCall.function.arguments);
@@ -497,9 +501,7 @@ export async function runChatLoop({
               parsedArgs.error,
             );
             messages = withToolResult(messages, toolCall.id, failure);
-            io.writeLine(
-              `[tool] error: invalid arguments JSON: ${parsedArgs.error}`,
-            );
+            io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
             continue;
           }
 
@@ -513,7 +515,7 @@ export async function runChatLoop({
               unavailableMessage,
             );
             messages = withToolResult(messages, toolCall.id, failure);
-            io.writeLine(`[tool] error: ${unavailableMessage}`);
+            io.writeError(unavailableMessage);
             continue;
           }
 
@@ -523,8 +525,8 @@ export async function runChatLoop({
               () => toolRuntime.invoke(toolName, parsedArgs.value),
             );
             messages = withToolResult(messages, toolCall.id, result);
-            io.writeLine(`[tool] response from ${toolName}:`);
-            io.writeLine(toPreview(result, config.maxPreviewChars));
+            io.writeStatus(`response from ${toolName}`);
+            io.writeOutput(toPreview(result, config.maxPreviewChars));
           } catch (error) {
             let failureReason:
               | "tool_invoke_error"
@@ -539,7 +541,7 @@ export async function runChatLoop({
               );
 
               if (shouldBypass) {
-                io.writeLine(`[tool] retrying ${toolName} with SecurityBypass`);
+                io.writeStatus(`retrying ${toolName} with SecurityBypass`);
                 try {
                   const bypassedResult = await io.runWithSpinner(
                     `[tool] running ${toolName} (SecurityBypass)`,
@@ -553,8 +555,8 @@ export async function runChatLoop({
                     toolCall.id,
                     bypassedResult,
                   );
-                  io.writeLine(`[tool] response from ${toolName}:`);
-                  io.writeLine(
+                  io.writeStatus(`response from ${toolName}`);
+                  io.writeOutput(
                     toPreview(bypassedResult, config.maxPreviewChars),
                   );
                   continue;
@@ -572,14 +574,14 @@ export async function runChatLoop({
 
             const failure = buildToolFailure(failureReason, invokeError);
             messages = withToolResult(messages, toolCall.id, failure);
-            io.writeLine(`[tool] error from ${toolName}: ${invokeError}`);
+            io.writeError(`error from ${toolName}: ${invokeError}`);
           }
         }
       }
 
       if (!printedFinal) {
-        io.writeLine(
-          `[assistant] tool loop reached max rounds (${config.maxToolRounds}).`,
+        io.writeStatus(
+          `tool loop reached max rounds (${config.maxToolRounds}).`,
         );
       }
     } catch (error) {

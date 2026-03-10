@@ -2,6 +2,9 @@ import {
   createStickyStatusBar,
   HistoryManager,
   input,
+  printError,
+  printStatus,
+  printToolCall,
   select,
   withSpinner,
 } from "terminal-ui-kit";
@@ -38,6 +41,13 @@ export function createConsoleIO(): ConsoleIO {
     }
 
     return parts.join(" ");
+  };
+
+  const writeRaw = (
+    message: string,
+    writer: Pick<typeof process.stdout, "write">,
+  ) => {
+    writer.write(`${message}\n`);
   };
 
   return {
@@ -99,11 +109,21 @@ export function createConsoleIO(): ConsoleIO {
       tokenStatus = null;
       stickyBar.clear();
     },
-    writeLine(message) {
-      console.log(message);
+    writeStatus(message) {
+      for (const line of message.split("\n")) {
+        printStatus(line);
+      }
+    },
+    writeToolCall(name, args) {
+      printToolCall(name, args);
+    },
+    writeOutput(message) {
+      writeRaw(message, process.stdout);
     },
     writeError(message) {
-      console.error(message);
+      for (const line of message.split("\n")) {
+        printError(line);
+      }
     },
   };
 }

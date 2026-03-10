@@ -14,6 +14,7 @@
 - [x] `exec` サブコマンドで、指定した指示をユーザー確認せずにやり遂げる自律エージェントモードを起動する。
 - [ ] 環境変数 `OPENAI_*` の読み取りを廃止、configに統一する
 - [ ] `init` サブコマンド or `/init` により、`.agents/vibe-config` 等、設定ファイルの初期化を行う
-- [ ] `terminal-ui-kit`のstatus/log/error output APIに対応する
-- [ ] `bypassPermissions` に対応して、制約で止められた場合に一時的なバイパスができるようにする。
+- [x] `terminal-ui-kit`のstatus/log/error output APIに対応する
+- [x] `bypassPermissions` に対応して、制約で止められた場合に一時的なバイパスができるようにする。
 - [ ] `ToDo` 管理ツールができたら、ユーザー要求 > ToDo作成 > 実行 > VERIRYのループを組み込む
+- [ ] `hooks` 機能の追加

@@ -3,6 +3,7 @@ import { runExecTask } from "../../src/app/run-exec-task";
 import type {
   CompletionGateway,
   CompletionTool,
+  ConsoleIO,
   OpenAIUsage,
   RuntimeConfig,
   ToolRuntime,
@@ -36,6 +37,32 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
 }
 
 describe("runExecTask", () => {
+  function createTestIO(
+    logs: string[],
+  ): Pick<
+    ConsoleIO,
+    "writeStatus" | "writeToolCall" | "writeOutput" | "writeError"
+  > {
+    return {
+      writeStatus(message) {
+        logs.push(message);
+      },
+      writeToolCall(name, args) {
+        logs.push(
+          args === undefined
+            ? `TOOL:${name}`
+            : `TOOL:${name} ${JSON.stringify(args)}`,
+        );
+      },
+      writeOutput(message) {
+        logs.push(message);
+      },
+      writeError(message) {
+        logs.push(`ERR:${message}`);
+      },
+    };
+  }
+
   test("returns success when assistant completes without tools", async () => {
     const logs: string[] = [];
     const completionGateway: CompletionGateway = {
@@ -71,12 +98,7 @@ describe("runExecTask", () => {
       config: createConfig(),
       completionGateway,
       toolRuntime,
-      writeLine: (message) => {
-        logs.push(message);
-      },
-      writeError: (message) => {
-        logs.push(`ERR:${message}`);
-      },
+      io: createTestIO(logs),
     });
 
     expect(result).toEqual({ success: true, exitCode: 0 });
@@ -126,12 +148,7 @@ describe("runExecTask", () => {
       config: createConfig(),
       completionGateway,
       toolRuntime,
-      writeLine: (message) => {
-        logs.push(message);
-      },
-      writeError: (message) => {
-        logs.push(`ERR:${message}`);
-      },
+      io: createTestIO(logs),
     });
 
     expect(result).toEqual({ success: true, exitCode: 0 });
@@ -180,12 +197,7 @@ describe("runExecTask", () => {
       config: createConfig({ maxToolRounds: 1 }),
       completionGateway,
       toolRuntime,
-      writeLine: (message) => {
-        logs.push(message);
-      },
-      writeError: (message) => {
-        logs.push(`ERR:${message}`);
-      },
+      io: createTestIO(logs),
     });
 
     expect(result).toEqual({ success: false, exitCode: 1 });
@@ -231,12 +243,7 @@ describe("runExecTask", () => {
       config: createConfig({ maxToolRounds: 6 }),
       completionGateway,
       toolRuntime,
-      writeLine: (message) => {
-        logs.push(message);
-      },
-      writeError: (message) => {
-        logs.push(`ERR:${message}`);
-      },
+      io: createTestIO(logs),
     });
 
     expect(result).toEqual({ success: true, exitCode: 0 });

@@ -20,9 +20,10 @@ async function readInstructionFromStdin(): Promise<string> {
   return text.trim();
 }
 
+const io = createConsoleIO();
 const parsed = parseCliArgs(process.argv.slice(2));
 if (!parsed.ok) {
-  console.error(`[error] ${parsed.error}`);
+  io.writeError(parsed.error);
   process.exit(1);
 }
 
@@ -43,7 +44,7 @@ if (parsed.mode === "chat") {
     config,
     completionGateway,
     toolRuntime,
-    io: createConsoleIO(),
+    io,
     onExit: () => {
       process.exit(0);
     },
@@ -56,9 +57,7 @@ if (parsed.mode === "chat") {
     joinedInstruction.length > 0 ? joinedInstruction : stdinInstruction;
 
   if (instruction.length === 0) {
-    console.error(
-      "[error] exec requires instruction text. Pass as args or via stdin.",
-    );
+    io.writeError("exec requires instruction text. Pass as args or via stdin.");
     process.exit(1);
   }
 
@@ -66,8 +65,8 @@ if (parsed.mode === "chat") {
     process.cwd(),
     parsed.configFilePath,
   );
-  console.log(`[exec] config_file=${resolvedConfigPath}`);
-  console.log(
+  io.writeStatus(`[exec] config_file=${resolvedConfigPath}`);
+  io.writeStatus(
     `[exec] instruction_file=${config.agentInstructionPath ?? "N/A"}`,
   );
 
@@ -77,6 +76,7 @@ if (parsed.mode === "chat") {
       config,
       completionGateway,
       toolRuntime,
+      io,
     });
     if (!result.success) {
       process.exit(result.exitCode);
@@ -84,7 +84,7 @@ if (parsed.mode === "chat") {
     process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`[error] exec failed: ${message}`);
+    io.writeError(`exec failed: ${message}`);
     process.exit(1);
   }
 }

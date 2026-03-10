@@ -14,6 +14,7 @@ import {
 import type {
   ChatMessage,
   CompletionGateway,
+  ConsoleIO,
   OpenAIUsage,
   RuntimeConfig,
   ToolRuntime,
@@ -34,8 +35,10 @@ interface RunExecTaskDeps {
   config: RuntimeConfig;
   completionGateway: CompletionGateway;
   toolRuntime: ToolRuntime;
-  writeLine?: (message: string) => void;
-  writeError?: (message: string) => void;
+  io: Pick<
+    ConsoleIO,
+    "writeStatus" | "writeToolCall" | "writeOutput" | "writeError"
+  >;
 }
 
 interface RunExecTaskResult {
@@ -117,12 +120,7 @@ export async function runExecTask({
   config,
   completionGateway,
   toolRuntime,
-  writeLine = (message) => {
-    console.log(message);
-  },
-  writeError = (message) => {
-    console.error(message);
-  },
+  io,
 }: RunExecTaskDeps): Promise<RunExecTaskResult> {
   const tools = toolRuntime.getAllowedTools();
   const availableToolNames = toolRuntime.getAllowedToolNames();
@@ -139,11 +137,11 @@ export async function runExecTask({
   let cumulativeUsage = createZeroUsage();
   let missingDoneTokenRetries = 0;
 
-  writeLine(`[exec] started. model=${model}`);
-  writeLine(`[exec] base_url=${baseUrl}`);
+  io.writeStatus(`[exec] started. model=${model}`);
+  io.writeStatus(`[exec] base_url=${baseUrl}`);
 
   for (let round = 0; round < config.maxToolRounds; round += 1) {
-    writeLine(
+    io.writeStatus(
       `[exec] thinking... (round ${round + 1}/${config.maxToolRounds})`,
     );
 
@@ -164,13 +162,13 @@ export async function runExecTask({
 
     cumulativeUsage = addUsage(cumulativeUsage, usage);
     if (retriedWithRequired) {
-      writeLine(
+      io.writeStatus(
         "[exec] no tool call in round 1, retried with tool_choice=required",
       );
     }
 
     if (!assistantMessage) {
-      writeError("[exec] assistant returned empty response");
+      io.writeError("[exec] assistant returned empty response");
       return { success: false, exitCode: 1 };
     }
 
@@ -182,7 +180,7 @@ export async function runExecTask({
       if (!hasDoneToken(assistantText)) {
         if (missingDoneTokenRetries < MAX_MISSING_DONE_TOKEN_RETRIES) {
           missingDoneTokenRetries += 1;
-          writeLine(
+          io.writeStatus(
             `[exec] assistant response missing completion token ${EXEC_DONE_TOKEN}; continuing`,
           );
           messages = withUserMessage(
@@ -192,23 +190,23 @@ export async function runExecTask({
           continue;
         }
 
-        writeLine(
+        io.writeStatus(
           `[exec] completion token still missing after ${MAX_MISSING_DONE_TOKEN_RETRIES} retry; forcing completion output`,
         );
       }
 
-      writeLine("[exec] completed");
-      writeLine(
+      io.writeStatus("[exec] completed");
+      io.writeStatus(
         `[exec] tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
       );
 
       const summary = extractSummary(assistantText);
-      writeLine(EXEC_SUMMARY_START);
+      io.writeOutput(EXEC_SUMMARY_START);
       if (summary.length > 0) {
-        writeLine(summary);
+        io.writeOutput(summary);
       }
-      writeLine(EXEC_SUMMARY_END);
-      writeLine(EXEC_DONE_TOKEN);
+      io.writeOutput(EXEC_SUMMARY_END);
+      io.writeOutput(EXEC_DONE_TOKEN);
 
       return { success: true, exitCode: 0 };
     }
@@ -225,9 +223,9 @@ export async function runExecTask({
       }
 
       const toolName = toolCall.function.name;
-      writeLine(`[tool] calling ${toolName}`);
-      writeLine(
-        `[tool] args: ${toPreview(toolCall.function.arguments, config.maxPreviewChars)}`,
+      io.writeToolCall(toolName);
+      io.writeOutput(
+        toPreview(toolCall.function.arguments, config.maxPreviewChars),
       );
 
       const parsedArgs = parseToolArgs(toolCall.function.arguments);
@@ -237,7 +235,7 @@ export async function runExecTask({
           parsedArgs.error,
         );
         messages = withToolResult(messages, toolCall.id, failure);
-        writeLine(`[tool] error: invalid arguments JSON: ${parsedArgs.error}`);
+        io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
         continue;
       }
 
@@ -251,26 +249,26 @@ export async function runExecTask({
           unavailableMessage,
         );
         messages = withToolResult(messages, toolCall.id, failure);
-        writeLine(`[tool] error: ${unavailableMessage}`);
+        io.writeError(unavailableMessage);
         continue;
       }
 
       try {
         const result = await toolRuntime.invoke(toolName, parsedArgs.value);
         messages = withToolResult(messages, toolCall.id, result);
-        writeLine(`[tool] response from ${toolName}:`);
-        writeLine(toPreview(result, config.maxPreviewChars));
+        io.writeStatus(`response from ${toolName}`);
+        io.writeOutput(toPreview(result, config.maxPreviewChars));
       } catch (error) {
         const invokeError =
           error instanceof Error ? error.message : String(error);
         const failure = buildToolFailure("tool_invoke_error", invokeError);
         messages = withToolResult(messages, toolCall.id, failure);
-        writeLine(`[tool] error from ${toolName}: ${invokeError}`);
+        io.writeError(`error from ${toolName}: ${invokeError}`);
       }
     }
   }
 
-  writeError(
+  io.writeError(
     `[exec] reached max rounds without final answer (${config.maxToolRounds})`,
   );
   return { success: false, exitCode: 1 };
