@@ -94,7 +94,7 @@ High-level agent loop:
    | - tasks complete    |
    | - checks pass       |
    +---------------------+
-      | yes                    | no
+      | yes -------------------+ no
       v                        |
 +------------------+           |
 | Final response   |           |
