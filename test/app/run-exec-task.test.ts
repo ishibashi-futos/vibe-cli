@@ -136,9 +136,9 @@ describe("runExecTask", () => {
 
     expect(result).toEqual({ success: true, exitCode: 0 });
     expect(callCount).toBe(2);
-    expect(
-      logs.some((line) => line.includes("missing completion token")),
-    ).toBe(true);
+    expect(logs.some((line) => line.includes("missing completion token"))).toBe(
+      true,
+    );
   });
 
   test("returns non-zero when max rounds is reached", async () => {
@@ -190,7 +190,9 @@ describe("runExecTask", () => {
 
     expect(result).toEqual({ success: false, exitCode: 1 });
     expect(
-      logs.some((line) => line.includes("reached max rounds without final answer")),
+      logs.some((line) =>
+        line.includes("reached max rounds without final answer"),
+      ),
     ).toBe(true);
   });
 

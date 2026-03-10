@@ -73,7 +73,8 @@ function loadVibeModelConfig(
       continue;
     }
 
-    const contextLength = (definition as Record<string, unknown>).context_length;
+    const contextLength = (definition as Record<string, unknown>)
+      .context_length;
     if (
       typeof contextLength === "number" &&
       Number.isInteger(contextLength) &&

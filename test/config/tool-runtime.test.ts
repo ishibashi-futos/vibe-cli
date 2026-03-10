@@ -123,7 +123,9 @@ describe("tool-runtime config", () => {
   });
 
   test("can invoke denied tool with securityBypass option", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "vibe-tool-runtime-test-"));
+    const workspaceRoot = mkdtempSync(
+      join(tmpdir(), "vibe-tool-runtime-test-"),
+    );
     try {
       mkdirSync(join(workspaceRoot, ".agents"), { recursive: true });
       writeFileSync(

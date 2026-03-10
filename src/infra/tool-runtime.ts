@@ -137,10 +137,7 @@ export function createDefaultToolRuntime(
     },
     async invoke(toolName, args, options) {
       const invokeTool = () =>
-        toolkit.invoke(
-          toolName as Parameters<typeof toolkit.invoke>[0],
-          args,
-        );
+        toolkit.invoke(toolName as Parameters<typeof toolkit.invoke>[0], args);
       const result = options?.securityBypass
         ? await SecurityBypass.run(invokeTool)
         : await invokeTool();

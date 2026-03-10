@@ -66,12 +66,14 @@ export function resolveInstructionCandidates(params: {
     candidates.push(configRelativeCandidate);
 
     if (!isAbsolute(instructionFile)) {
-      const workspaceRelativeCandidate = resolve(workspaceRoot, instructionFile);
+      const workspaceRelativeCandidate = resolve(
+        workspaceRoot,
+        instructionFile,
+      );
       if (!candidates.includes(workspaceRelativeCandidate)) {
         candidates.push(workspaceRelativeCandidate);
       }
     }
-
   }
 
   const workspaceFallback = resolve(

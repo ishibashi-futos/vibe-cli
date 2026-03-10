@@ -19,10 +19,7 @@ export interface ReadUserInputResult {
 export interface SlashCommand {
   name: string;
   description?: string;
-  callback?: (
-    args: string[],
-    rawInput: string,
-  ) => void | Promise<void>;
+  callback?: (args: string[], rawInput: string) => void | Promise<void>;
 }
 
 export interface ReadUserInputOptions {
@@ -92,7 +89,10 @@ export interface ConsoleIO {
     options?: ReadUserInputOptions,
   ): Promise<ReadUserInputResult>;
   selectModel(models: string[], currentModel: string): Promise<string>;
-  selectSecurityBypass(toolName: string, errorMessage: string): Promise<boolean>;
+  selectSecurityBypass(
+    toolName: string,
+    errorMessage: string,
+  ): Promise<boolean>;
   runWithSpinner<T>(message: string, task: () => Promise<T>): Promise<T>;
   updateTokenStatus(snapshot: TokenStatusSnapshot): void;
   resetSessionUiState(): void;

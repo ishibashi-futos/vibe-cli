@@ -103,9 +103,7 @@ function extractSummary(assistantText: string): string {
   const start = assistantText.indexOf(EXEC_SUMMARY_START);
   const end = assistantText.indexOf(EXEC_SUMMARY_END);
   if (start >= 0 && end > start) {
-    return assistantText
-      .slice(start + EXEC_SUMMARY_START.length, end)
-      .trim();
+    return assistantText.slice(start + EXEC_SUMMARY_START.length, end).trim();
   }
 
   return assistantText
@@ -145,19 +143,24 @@ export async function runExecTask({
   writeLine(`[exec] base_url=${baseUrl}`);
 
   for (let round = 0; round < config.maxToolRounds; round += 1) {
-    writeLine(`[exec] thinking... (round ${round + 1}/${config.maxToolRounds})`);
+    writeLine(
+      `[exec] thinking... (round ${round + 1}/${config.maxToolRounds})`,
+    );
 
-    const { message: assistantMessage, retriedWithRequired, usage } =
-      await requestAssistantMessage({
-        gateway: completionGateway,
-        baseUrl,
-        apiKey,
-        model,
-        messages,
-        tools,
-        round,
-        enforceToolCallFirstRound: config.enforceToolCallFirstRound,
-      });
+    const {
+      message: assistantMessage,
+      retriedWithRequired,
+      usage,
+    } = await requestAssistantMessage({
+      gateway: completionGateway,
+      baseUrl,
+      apiKey,
+      model,
+      messages,
+      tools,
+      round,
+      enforceToolCallFirstRound: config.enforceToolCallFirstRound,
+    });
 
     cumulativeUsage = addUsage(cumulativeUsage, usage);
     if (retriedWithRequired) {
@@ -243,7 +246,10 @@ export async function runExecTask({
           toolName,
           availableToolNames,
         );
-        const failure = buildToolFailure("tool_not_available", unavailableMessage);
+        const failure = buildToolFailure(
+          "tool_not_available",
+          unavailableMessage,
+        );
         messages = withToolResult(messages, toolCall.id, failure);
         writeLine(`[tool] error: ${unavailableMessage}`);
         continue;

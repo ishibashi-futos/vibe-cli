@@ -528,7 +528,9 @@ describe("runChatLoop", () => {
     expect(getSecurityPrompts()[0]?.toolName).toBe("exec_command");
     expect(invokeOptions).toEqual([{}, { securityBypass: true }]);
     expect(
-      logs.some((line) => line.includes("retrying exec_command with SecurityBypass")),
+      logs.some((line) =>
+        line.includes("retrying exec_command with SecurityBypass"),
+      ),
     ).toBe(true);
     expect(
       spinnerMessages.some((message) =>

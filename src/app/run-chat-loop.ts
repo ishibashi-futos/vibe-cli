@@ -279,7 +279,10 @@ export async function runChatLoop({
                 .filter((modelName) => modelName !== currentModel)
                 .sort(),
             ];
-            const requested = await io.selectModel(selectableModels, currentModel);
+            const requested = await io.selectModel(
+              selectableModels,
+              currentModel,
+            );
 
             currentModel = requested;
             currentBaseUrl = resolveBaseUrl(currentModel);
@@ -523,8 +526,9 @@ export async function runChatLoop({
             io.writeLine(`[tool] response from ${toolName}:`);
             io.writeLine(toPreview(result, config.maxPreviewChars));
           } catch (error) {
-            let failureReason: "tool_invoke_error" | "security_bypass_declined" =
-              "tool_invoke_error";
+            let failureReason:
+              | "tool_invoke_error"
+              | "security_bypass_declined" = "tool_invoke_error";
             let invokeError =
               error instanceof Error ? error.message : String(error);
 
@@ -535,9 +539,7 @@ export async function runChatLoop({
               );
 
               if (shouldBypass) {
-                io.writeLine(
-                  `[tool] retrying ${toolName} with SecurityBypass`,
-                );
+                io.writeLine(`[tool] retrying ${toolName} with SecurityBypass`);
                 try {
                   const bypassedResult = await io.runWithSpinner(
                     `[tool] running ${toolName} (SecurityBypass)`,
@@ -546,7 +548,11 @@ export async function runChatLoop({
                         securityBypass: true,
                       }),
                   );
-                  messages = withToolResult(messages, toolCall.id, bypassedResult);
+                  messages = withToolResult(
+                    messages,
+                    toolCall.id,
+                    bypassedResult,
+                  );
                   io.writeLine(`[tool] response from ${toolName}:`);
                   io.writeLine(
                     toPreview(bypassedResult, config.maxPreviewChars),

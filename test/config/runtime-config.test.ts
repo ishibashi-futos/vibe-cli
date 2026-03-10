@@ -217,7 +217,9 @@ describe("runtime-config", () => {
           configFilePath: ".agents/review/vibe-config.json",
         });
         expect(config.systemPrompt).toBe("default-system\n\nroot instructions");
-        expect(config.agentInstructionPath).toBe(join(process.cwd(), "AGENTS.md"));
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), "AGENTS.md"),
+        );
       },
     );
   });
