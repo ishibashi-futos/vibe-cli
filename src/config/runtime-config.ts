@@ -258,6 +258,7 @@ export function loadAppConfig(
   defaultSystemPrompt: string,
   options: {
     configFilePath?: string | null;
+    workflowSystemPromptContract?: string | null;
   } = {},
 ): AppConfig {
   const cwd = process.cwd();
@@ -280,6 +281,13 @@ export function loadAppConfig(
     defaultSystemPrompt,
     loadedInstruction.content,
   );
+  const workflowContract = options.workflowSystemPromptContract ?? null;
+  const customSystemPrompt =
+    loadedSystemPrompt.content === null
+      ? null
+      : workflowContract
+        ? mergeSystemPrompt(workflowContract, loadedSystemPrompt.content)
+        : loadedSystemPrompt.content;
 
   return {
     baseUrl: DEFAULT_BASE_URL,
@@ -288,7 +296,7 @@ export function loadAppConfig(
     modelContextLengths: loaded.contextLengths,
     modelBaseUrls: loaded.baseUrls,
     modelApiKeys: loaded.apiKeys,
-    systemPrompt: loadedSystemPrompt.content ?? mergedSystemPrompt,
+    systemPrompt: customSystemPrompt ?? mergedSystemPrompt,
     agentInstructionPath: loadedInstruction.path,
     maxToolRounds: loaded.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS,
     maxPreviewChars: loaded.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,

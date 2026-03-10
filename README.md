@@ -43,6 +43,70 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 
 - `exec` exits with non-zero status when it cannot reach a final answer (for example: API failure or max rounds reached).
 
+## Agent Loop
+
+High-level agent loop:
+
+```text
++------------------+
+| User request     |
++------------------+
+          |
+          v
++-----------------------------+
+| Understand goal / DoD       |
+| and decide next action      |
++-----------------------------+
+          |
+          v
++-----------------------------+
+| Analyze codebase            |
+| - regexp_search ("grep")    |
+| - ast_grep_search           |
+| - tree                      |
+| - git_status_summary        |
++-----------------------------+
+          |
+          v
++-----------------------------+
+| Build / update task list    |
+| (session-local todo state)  |
++-----------------------------+
+          |
+          v
++-----------------------------+
+| Execute one focused step    |
+| - read/edit files           |
+| - run commands/tests        |
++-----------------------------+
+          |
+          v
++-----------------------------+
+| VERIFY                      |
+| - inspect results/logs      |
+| - run checks                |
+| - confirm remaining tasks   |
++-----------------------------+
+          |
+          v
+   +---------------------+
+   | Done?               |
+   | - tasks complete    |
+   | - checks pass       |
+   +---------------------+
+      | yes                    | no
+      v                        |
++------------------+           |
+| Final response   |           |
++------------------+           |
+                               |
+                               +----> back to Analyze / Execute
+```
+
+- The core idea is: do not jump from user request straight to edits or a final answer.
+- The agent should first gather evidence from the codebase, keep track of tasks, execute one step at a time, and verify before finishing.
+- `regexp_search` is the structured workspace search tool that plays the role of `grep` in this loop.
+
 ## Slash Commands
 
 - `/help`: Show available commands
@@ -97,7 +161,7 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 - If `default_model` is omitted, the first entry under `models` is used.
 - `system_prompt_file` is optional and can be absolute or relative.
 - Relative `system_prompt_file` is resolved from the selected config file's directory.
-- If `system_prompt_file` exists, its content replaces the built-in system prompt.
+- If `system_prompt_file` exists, its content is appended after the built-in workflow contract.
 - If `system_prompt_file` is missing, the built-in system prompt is used and `instruction_file` content is appended.
 - `max_tool_rounds`, `max_preview_chars`, `mention_max_lines`, `enforce_tool_call_first_round` are optional runtime settings.
 - `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).

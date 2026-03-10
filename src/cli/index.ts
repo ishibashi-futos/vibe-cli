@@ -6,7 +6,10 @@ import {
   initializeVibeConfig,
   resolveVibeConfigPath,
 } from "../config/vibe-config";
-import { buildDefaultSystemPrompt } from "../domain/policies";
+import {
+  buildDefaultSystemPrompt,
+  buildWorkflowSystemPromptContract,
+} from "../domain/policies";
 import { createConsoleIO } from "../infra/console-io";
 import { createOpenAICompletionGateway } from "../infra/openai-client";
 import { createDefaultToolRuntime } from "../infra/tool-runtime";
@@ -48,6 +51,10 @@ if (parsed.mode === "init") {
 const toolRuntime = createDefaultToolRuntime(process.cwd(), {
   configFilePath: parsed.configFilePath,
 });
+const workflowSystemPromptContract = buildWorkflowSystemPromptContract(
+  toolRuntime.getAllowedToolNames(),
+  toolRuntime.getExecutionEnvironment?.(),
+);
 const defaultSystemPrompt = buildDefaultSystemPrompt(
   toolRuntime.getAllowedToolNames(),
   toolRuntime.getExecutionEnvironment?.(),
@@ -56,6 +63,7 @@ let config: AppConfig;
 try {
   config = loadAppConfig(defaultSystemPrompt, {
     configFilePath: parsed.configFilePath,
+    workflowSystemPromptContract,
   });
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

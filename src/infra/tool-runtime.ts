@@ -2,14 +2,21 @@ import {
   SecurityBypass,
   createAgentToolkit,
   createToolContext,
-  type FileAccessMode,
   type ToolPolicy,
+  type FileAccessMode,
 } from "agent-tools-ts";
 import { basename } from "node:path";
 import type { ToolRuntime } from "../domain/types";
 import { loadVibeConfigFile } from "../config/vibe-config";
 
 const DEFAULT_WRITE_SCOPE: FileAccessMode = "workspace-write";
+const INTERNAL_TASK_TOOL_NAMES = [
+  "task_create_many",
+  "task_list",
+  "task_update",
+  "task_update_status",
+  "task_validate_completion",
+] as const;
 const DEFAULT_POLICY: ToolPolicy = {
   tools: {},
   defaultPolicy: "allow",
@@ -102,16 +109,39 @@ export function createDefaultToolRuntime(
   });
 
   const toolkit = createAgentToolkit(toolContext);
+  const internalTaskToolkit = createAgentToolkit(
+    createToolContext({
+      workspaceRoot,
+      writeScope: loaded.writeScope,
+      policy: {
+        defaultPolicy: "deny",
+        tools: Object.fromEntries(
+          INTERNAL_TASK_TOOL_NAMES.map((toolName) => [toolName, "allow"]),
+        ) as ToolPolicy["tools"],
+      },
+    }),
+  );
+
+  const getEffectiveAllowedTools = () => {
+    const combined = new Map(
+      toolkit
+        .getAllowedTools()
+        .map((tool) => [tool.function.name, tool] as const),
+    );
+    for (const tool of internalTaskToolkit.getAllowedTools()) {
+      combined.set(tool.function.name, tool);
+    }
+    return Array.from(combined.values()).sort((left, right) =>
+      left.function.name.localeCompare(right.function.name),
+    );
+  };
 
   return {
     getAllowedTools() {
-      return toolkit.getAllowedTools();
+      return getEffectiveAllowedTools();
     },
     getAllowedToolNames() {
-      return toolkit
-        .getAllowedTools()
-        .map((tool) => tool.function.name)
-        .sort();
+      return getEffectiveAllowedTools().map((tool) => tool.function.name);
     },
     getExecutionEnvironment() {
       const shell =

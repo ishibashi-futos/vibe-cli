@@ -24,6 +24,12 @@ import {
   getToolCalls,
   requestAssistantMessage,
 } from "./chat-orchestrator";
+import {
+  buildWorkflowFinalContinuationMessage,
+  createWorkflowGate,
+  recordWorkflowToolSuccess,
+  shouldBlockToolExecution,
+} from "../domain/workflow-gate";
 
 const EXEC_DONE_TOKEN = "<EXEC_DONE />";
 const EXEC_SUMMARY_START = "<EXEC_SUMMARY>";
@@ -125,6 +131,10 @@ export async function runExecTask({
   const tools = toolRuntime.getAllowedTools();
   const availableToolNames = toolRuntime.getAllowedToolNames();
   const availableToolSet = new Set(availableToolNames);
+  const workflowGate = createWorkflowGate({
+    activated: true,
+    availableToolNames,
+  });
 
   const model = config.model;
   const baseUrl = config.modelBaseUrls[model] ?? config.baseUrl;
@@ -176,6 +186,14 @@ export async function runExecTask({
     if (toolCalls.length === 0) {
       const assistantText = getAssistantContent(assistantMessage);
       messages = withAssistantFinalMessage(messages, assistantText);
+
+      const continueMessage =
+        buildWorkflowFinalContinuationMessage(workflowGate);
+      if (continueMessage) {
+        io.writeStatus("[exec] workflow gate blocked final response");
+        messages = withUserMessage(messages, continueMessage);
+        continue;
+      }
 
       if (!hasDoneToken(assistantText)) {
         if (missingDoneTokenRetries < MAX_MISSING_DONE_TOKEN_RETRIES) {
@@ -254,10 +272,37 @@ export async function runExecTask({
       }
 
       try {
+        const preflightFailure = shouldBlockToolExecution(
+          workflowGate,
+          toolName,
+        );
+        if (preflightFailure) {
+          messages = withToolResult(messages, toolCall.id, preflightFailure);
+          io.writeError(
+            `workflow gate for ${toolName}: ${preflightFailure.message}`,
+          );
+          continue;
+        }
+
         const result = await toolRuntime.invoke(toolName, parsedArgs.value);
         messages = withToolResult(messages, toolCall.id, result);
         io.writeStatus(`response from ${toolName}`);
         io.writeOutput(toPreview(result, config.maxPreviewChars));
+        if (
+          typeof result === "object" &&
+          result !== null &&
+          "status" in result &&
+          result.status === "success" &&
+          "data" in result &&
+          typeof result.data === "object" &&
+          result.data !== null
+        ) {
+          recordWorkflowToolSuccess(
+            workflowGate,
+            toolName,
+            result.data as Record<string, unknown>,
+          );
+        }
       } catch (error) {
         const invokeError =
           error instanceof Error ? error.message : String(error);

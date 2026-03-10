@@ -63,10 +63,50 @@ describe("runExecTask", () => {
     };
   }
 
-  test("returns success when assistant completes without tools", async () => {
+  test("returns success when workflow requirements are satisfied", async () => {
     const logs: string[] = [];
+    let callCount = 0;
     const completionGateway: CompletionGateway = {
       async request() {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "regexp_search",
+                    arguments: '{"pattern":"runExecTask"}',
+                  },
+                },
+                {
+                  id: "call_2",
+                  type: "function",
+                  function: {
+                    name: "task_create_many",
+                    arguments:
+                      '{"tasks":[{"title":"inspect"},{"title":"finish"}]}',
+                  },
+                },
+                {
+                  id: "call_3",
+                  type: "function",
+                  function: {
+                    name: "task_validate_completion",
+                    arguments: "{}",
+                  },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(10),
+          };
+        }
+
         return {
           message: {
             role: "assistant",
@@ -86,9 +126,22 @@ describe("runExecTask", () => {
         return tools;
       },
       getAllowedToolNames() {
-        return ["read_file"];
+        return [
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
       },
-      async invoke() {
+      async invoke(toolName) {
+        if (toolName === "regexp_search") {
+          return { status: "success", data: { matches: [] } };
+        }
+        if (toolName === "task_create_many") {
+          return { status: "success", data: { tasks: [] } };
+        }
+        if (toolName === "task_validate_completion") {
+          return { status: "success", data: { ok: true, remaining: [] } };
+        }
         throw new Error("not expected");
       },
     };
@@ -110,7 +163,7 @@ describe("runExecTask", () => {
     expect(logs.some((line) => line.startsWith("ERR:"))).toBe(false);
   });
 
-  test("continues when assistant response has no completion token", async () => {
+  test("continues when completion token is missing after workflow requirements are satisfied", async () => {
     const logs: string[] = [];
     let callCount = 0;
     const completionGateway: CompletionGateway = {
@@ -121,9 +174,39 @@ describe("runExecTask", () => {
             role: "assistant",
             content:
               callCount === 1
-                ? "still working"
-                : "<EXEC_SUMMARY>final result</EXEC_SUMMARY><EXEC_DONE />",
-            tool_calls: [],
+                ? ""
+                : callCount === 2
+                  ? "still working"
+                  : "<EXEC_SUMMARY>final result</EXEC_SUMMARY><EXEC_DONE />",
+            tool_calls:
+              callCount === 1
+                ? [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "regexp_search",
+                        arguments: '{"pattern":"hello"}',
+                      },
+                    },
+                    {
+                      id: "call_2",
+                      type: "function",
+                      function: {
+                        name: "task_create_many",
+                        arguments: '{"tasks":[{"title":"one"}]}',
+                      },
+                    },
+                    {
+                      id: "call_3",
+                      type: "function",
+                      function: {
+                        name: "task_validate_completion",
+                        arguments: "{}",
+                      },
+                    },
+                  ]
+                : [],
             refusal: null,
           },
           usage: usage(6),
@@ -136,23 +219,36 @@ describe("runExecTask", () => {
         return [];
       },
       getAllowedToolNames() {
-        return [];
+        return [
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
       },
-      async invoke() {
+      async invoke(toolName) {
+        if (toolName === "regexp_search") {
+          return { status: "success", data: { matches: [] } };
+        }
+        if (toolName === "task_create_many") {
+          return { status: "success", data: { tasks: [] } };
+        }
+        if (toolName === "task_validate_completion") {
+          return { status: "success", data: { ok: true, remaining: [] } };
+        }
         throw new Error("not expected");
       },
     };
 
     const result = await runExecTask({
       instruction: "hello",
-      config: createConfig(),
+      config: createConfig({ maxToolRounds: 3 }),
       completionGateway,
       toolRuntime,
       io: createTestIO(logs),
     });
 
     expect(result).toEqual({ success: true, exitCode: 0 });
-    expect(callCount).toBe(2);
+    expect(callCount).toBe(3);
     expect(logs.some((line) => line.includes("missing completion token"))).toBe(
       true,
     );
@@ -217,8 +313,39 @@ describe("runExecTask", () => {
         return {
           message: {
             role: "assistant",
-            content: "<EXEC_SUMMARY>final result in Japanese</EXEC_SUMMARY>",
-            tool_calls: [],
+            content:
+              callCount === 1
+                ? ""
+                : "<EXEC_SUMMARY>final result in Japanese</EXEC_SUMMARY>",
+            tool_calls:
+              callCount === 1
+                ? [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "regexp_search",
+                        arguments: '{"pattern":"hello"}',
+                      },
+                    },
+                    {
+                      id: "call_2",
+                      type: "function",
+                      function: {
+                        name: "task_create_many",
+                        arguments: '{"tasks":[{"title":"one"}]}',
+                      },
+                    },
+                    {
+                      id: "call_3",
+                      type: "function",
+                      function: {
+                        name: "task_validate_completion",
+                        arguments: "{}",
+                      },
+                    },
+                  ]
+                : [],
             refusal: null,
           },
           usage: usage(4),
@@ -231,9 +358,22 @@ describe("runExecTask", () => {
         return [];
       },
       getAllowedToolNames() {
-        return [];
+        return [
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
       },
-      async invoke() {
+      async invoke(toolName) {
+        if (toolName === "regexp_search") {
+          return { status: "success", data: { matches: [] } };
+        }
+        if (toolName === "task_create_many") {
+          return { status: "success", data: { tasks: [] } };
+        }
+        if (toolName === "task_validate_completion") {
+          return { status: "success", data: { ok: true, remaining: [] } };
+        }
         throw new Error("not expected");
       },
     };
@@ -247,10 +387,186 @@ describe("runExecTask", () => {
     });
 
     expect(result).toEqual({ success: true, exitCode: 0 });
-    expect(callCount).toBe(2);
+    expect(callCount).toBe(3);
     expect(
       logs.some((line) => line.includes("forcing completion output")),
     ).toBe(true);
     expect(logs).toContain("<EXEC_DONE />");
+  });
+
+  test("blocks final response until workflow requirements are met", async () => {
+    const logs: string[] = [];
+    let callCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "<EXEC_SUMMARY>done early</EXEC_SUMMARY><EXEC_DONE />",
+              tool_calls: [],
+              refusal: null,
+            },
+            usage: usage(6),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content:
+              callCount === 2
+                ? ""
+                : "<EXEC_SUMMARY>done after workflow</EXEC_SUMMARY><EXEC_DONE />",
+            tool_calls:
+              callCount === 2
+                ? [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "regexp_search",
+                        arguments: '{"pattern":"hello"}',
+                      },
+                    },
+                    {
+                      id: "call_2",
+                      type: "function",
+                      function: {
+                        name: "task_create_many",
+                        arguments: '{"tasks":[{"title":"one"}]}',
+                      },
+                    },
+                    {
+                      id: "call_3",
+                      type: "function",
+                      function: {
+                        name: "task_validate_completion",
+                        arguments: "{}",
+                      },
+                    },
+                  ]
+                : [],
+            refusal: null,
+          },
+          usage: usage(6),
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return [
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
+      },
+      async invoke(toolName) {
+        if (toolName === "regexp_search") {
+          return { status: "success", data: { matches: [] } };
+        }
+        if (toolName === "task_create_many") {
+          return { status: "success", data: { tasks: [] } };
+        }
+        if (toolName === "task_validate_completion") {
+          return { status: "success", data: { ok: true, remaining: [] } };
+        }
+        throw new Error("not expected");
+      },
+    };
+
+    const result = await runExecTask({
+      instruction: "hello",
+      config: createConfig({ maxToolRounds: 3 }),
+      completionGateway,
+      toolRuntime,
+      io: createTestIO(logs),
+    });
+
+    expect(result).toEqual({ success: true, exitCode: 0 });
+    expect(callCount).toBe(3);
+    expect(
+      logs.some((line) =>
+        line.includes("workflow gate blocked final response"),
+      ),
+    ).toBe(true);
+  });
+
+  test("blocks file mutation until analysis and todo setup are complete", async () => {
+    const logs: string[] = [];
+    let callCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        callCount += 1;
+        if (callCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "apply_patch",
+                    arguments: JSON.stringify({
+                      filePath: "README.md",
+                      patch: "--- a/README.md",
+                    }),
+                  },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(5),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content: "<EXEC_SUMMARY>stopped</EXEC_SUMMARY><EXEC_DONE />",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(5),
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return [
+          "apply_patch",
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
+      },
+      async invoke() {
+        throw new Error("apply_patch should be blocked before invoke");
+      },
+    };
+
+    const result = await runExecTask({
+      instruction: "hello",
+      config: createConfig({ maxToolRounds: 2 }),
+      completionGateway,
+      toolRuntime,
+      io: createTestIO(logs),
+    });
+
+    expect(result).toEqual({ success: false, exitCode: 1 });
+    expect(
+      logs.some((line) => line.includes("workflow gate for apply_patch")),
+    ).toBe(true);
   });
 });

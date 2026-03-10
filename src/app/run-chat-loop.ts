@@ -27,6 +27,13 @@ import {
   getToolCalls,
   requestAssistantMessage,
 } from "./chat-orchestrator";
+import {
+  activateWorkflowGate,
+  buildWorkflowFinalContinuationMessage,
+  createWorkflowGate,
+  recordWorkflowToolSuccess,
+  shouldBlockToolExecution,
+} from "../domain/workflow-gate";
 
 interface RunChatLoopDeps {
   config: RuntimeConfig;
@@ -407,6 +414,10 @@ export async function runChatLoop({
         messages,
         buildMessageWithMentionAttachments(userInput, mentionAttachments),
       );
+      const workflowGate = createWorkflowGate({
+        activated: false,
+        availableToolNames,
+      });
 
       let printedFinal = false;
 
@@ -464,6 +475,14 @@ export async function runChatLoop({
           const assistantText = getAssistantContent(assistantMessage);
           messages = withAssistantFinalMessage(messages, assistantText);
 
+          const continueMessage =
+            buildWorkflowFinalContinuationMessage(workflowGate);
+          if (continueMessage) {
+            io.writeStatus("workflow gate blocked final response");
+            messages = withUserMessage(messages, continueMessage);
+            continue;
+          }
+
           if (!assistantText) {
             io.writeStatus("assistant returned empty response");
           } else {
@@ -476,6 +495,7 @@ export async function runChatLoop({
           break;
         }
 
+        activateWorkflowGate(workflowGate);
         messages = withAssistantToolCalls(
           messages,
           getAssistantContent(assistantMessage),
@@ -520,6 +540,22 @@ export async function runChatLoop({
           }
 
           try {
+            const preflightFailure = shouldBlockToolExecution(
+              workflowGate,
+              toolName,
+            );
+            if (preflightFailure) {
+              messages = withToolResult(
+                messages,
+                toolCall.id,
+                preflightFailure,
+              );
+              io.writeError(
+                `workflow gate for ${toolName}: ${preflightFailure.message}`,
+              );
+              continue;
+            }
+
             const result = await io.runWithSpinner(
               `[tool] running ${toolName}`,
               () => toolRuntime.invoke(toolName, parsedArgs.value),
@@ -527,6 +563,21 @@ export async function runChatLoop({
             messages = withToolResult(messages, toolCall.id, result);
             io.writeStatus(`response from ${toolName}`);
             io.writeOutput(toPreview(result, config.maxPreviewChars));
+            if (
+              typeof result === "object" &&
+              result !== null &&
+              "status" in result &&
+              result.status === "success" &&
+              "data" in result &&
+              typeof result.data === "object" &&
+              result.data !== null
+            ) {
+              recordWorkflowToolSuccess(
+                workflowGate,
+                toolName,
+                result.data as Record<string, unknown>,
+              );
+            }
           } catch (error) {
             let failureReason:
               | "tool_invoke_error"
@@ -559,6 +610,21 @@ export async function runChatLoop({
                   io.writeOutput(
                     toPreview(bypassedResult, config.maxPreviewChars),
                   );
+                  if (
+                    typeof bypassedResult === "object" &&
+                    bypassedResult !== null &&
+                    "status" in bypassedResult &&
+                    bypassedResult.status === "success" &&
+                    "data" in bypassedResult &&
+                    typeof bypassedResult.data === "object" &&
+                    bypassedResult.data !== null
+                  ) {
+                    recordWorkflowToolSuccess(
+                      workflowGate,
+                      toolName,
+                      bypassedResult.data as Record<string, unknown>,
+                    );
+                  }
                   continue;
                 } catch (retryError) {
                   invokeError =

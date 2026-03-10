@@ -211,8 +211,12 @@ describe("runtime-config", () => {
         "CLAUDE.md": "custom instructions",
       },
       () => {
-        const config = loadAppConfig("default-system");
-        expect(config.systemPrompt).toBe("custom system prompt");
+        const config = loadAppConfig("default-system", {
+          workflowSystemPromptContract: "workflow-contract",
+        });
+        expect(config.systemPrompt).toBe(
+          "workflow-contract\n\ncustom system prompt",
+        );
         expect(config.agentInstructionPath).toBeNull();
       },
     );

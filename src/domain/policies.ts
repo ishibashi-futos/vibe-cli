@@ -1,5 +1,41 @@
 const DEFAULT_MAX_PREVIEW_CHARS = 4000;
 
+function buildEnvironmentLine(runtimeEnv?: {
+  platform: NodeJS.Platform;
+  osRelease: string;
+  shell: string;
+}): string {
+  return runtimeEnv
+    ? `Execution environment: platform=${runtimeEnv.platform}, os_release=${runtimeEnv.osRelease}, shell=${runtimeEnv.shell}.`
+    : "Execution environment: unknown.";
+}
+
+export function buildWorkflowSystemPromptContract(
+  availableToolNames: string[],
+  runtimeEnv?: {
+    platform: NodeJS.Platform;
+    osRelease: string;
+    shell: string;
+  },
+): string {
+  const environmentLine = buildEnvironmentLine(runtimeEnv);
+
+  return [
+    "Workflow contract (mandatory):",
+    "You are a coding agent running inside a CLI app.",
+    `Available tools (and only these): ${availableToolNames.join(", ")}.`,
+    environmentLine,
+    "Use this execution environment information when building commands and choosing path/quoting behavior.",
+    "For codebase tasks, do not jump straight to edits or a final answer.",
+    "First gather evidence from the codebase with at least one analysis tool such as regexp_search, ast_grep_search, tree, or git_status_summary when available.",
+    "After analysis, create a session task list with task_create_many before making file mutations.",
+    "Keep task state updated during execution with task_update or task_update_status when the plan changes or tasks complete.",
+    "If you mutate files, run verification with exec_command after the latest mutation before finalizing.",
+    "Before finalizing any tool-driven task, call task_validate_completion and continue working unless it returns ok=true.",
+    "If the workflow gate reports missing analysis, task setup, or verification, continue with tool calls and satisfy the missing steps.",
+  ].join("\n");
+}
+
 export function buildDefaultSystemPrompt(
   availableToolNames: string[],
   runtimeEnv?: {
@@ -8,15 +44,9 @@ export function buildDefaultSystemPrompt(
     shell: string;
   },
 ): string {
-  const environmentLine = runtimeEnv
-    ? `Execution environment: platform=${runtimeEnv.platform}, os_release=${runtimeEnv.osRelease}, shell=${runtimeEnv.shell}.`
-    : "Execution environment: unknown.";
-
   return [
-    "You are a coding agent running inside a CLI app.",
-    `Available tools (and only these): ${availableToolNames.join(", ")}.`,
-    environmentLine,
-    "Use this execution environment information when building commands and choosing path/quoting behavior.",
+    buildWorkflowSystemPromptContract(availableToolNames, runtimeEnv),
+    "",
     "At the start of every turn, run an internal self-correction step: Goal, State, Action.",
     "Set an explicit Definition of Done (DoD) for the current task and keep iterating until DoD is satisfied.",
     "Do not stop after edits; run relevant verification tools (for example run_tests, typecheck, lint) and only finish when checks pass.",

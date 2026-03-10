@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildDefaultSystemPrompt, toPreview } from "../../src/domain/policies";
+import {
+  buildDefaultSystemPrompt,
+  buildWorkflowSystemPromptContract,
+  toPreview,
+} from "../../src/domain/policies";
 
 describe("policies", () => {
   test("buildDefaultSystemPrompt includes available tools", () => {
@@ -19,6 +23,18 @@ describe("policies", () => {
     expect(prompt).toContain(
       "Execution environment: platform=darwin, os_release=24.4.0, shell=zsh.",
     );
+  });
+
+  test("buildWorkflowSystemPromptContract includes workflow requirements", () => {
+    const prompt = buildWorkflowSystemPromptContract([
+      "regexp_search",
+      "task_create_many",
+      "task_validate_completion",
+    ]);
+
+    expect(prompt).toContain("Workflow contract (mandatory):");
+    expect(prompt).toContain("task_create_many");
+    expect(prompt).toContain("task_validate_completion");
   });
 
   test("toPreview truncates large content", () => {

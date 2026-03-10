@@ -542,4 +542,142 @@ describe("runChatLoop", () => {
       ),
     ).toBe(true);
   });
+
+  test("blocks final response for tool-driven turn until workflow requirements are met", async () => {
+    const { io, logs } = createTestIO(["please fix", "/exit"]);
+    let requestCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "read_file",
+                    arguments: '{"path":"README.md"}',
+                  },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(4),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content: "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file", "task_create_many", "task_validate_completion"];
+      },
+      async invoke() {
+        return {
+          status: "success",
+          data: { path: "README.md", content: "hello", truncated: false },
+        };
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig({ maxToolRounds: 2 }),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(
+      logs.some((line) =>
+        line.includes("workflow gate blocked final response"),
+      ),
+    ).toBe(true);
+    expect(logs.some((line) => line === "done")).toBe(false);
+  });
+
+  test("blocks file mutation before analysis and task creation in chat loop", async () => {
+    const { io, logs } = createTestIO(["please fix", "/exit"]);
+    let requestCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "apply_patch",
+                    arguments:
+                      '{"filePath":"README.md","patch":"--- a/README.md"}',
+                  },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(4),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content: "",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return [
+          "apply_patch",
+          "regexp_search",
+          "task_create_many",
+          "task_validate_completion",
+        ];
+      },
+      async invoke() {
+        throw new Error("apply_patch should be blocked before invoke");
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig({ maxToolRounds: 2 }),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(
+      logs.some((line) => line.includes("workflow gate for apply_patch")),
+    ).toBe(true);
+  });
 });

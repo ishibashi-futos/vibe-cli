@@ -66,7 +66,15 @@ describe("tool-runtime config", () => {
       (workspaceRoot) => {
         const runtime = createDefaultToolRuntime(workspaceRoot);
 
-        expect(runtime.getAllowedToolNames()).toEqual(["read_file", "tree"]);
+        expect(runtime.getAllowedToolNames()).toEqual([
+          "read_file",
+          "task_create_many",
+          "task_list",
+          "task_update",
+          "task_update_status",
+          "task_validate_completion",
+          "tree",
+        ]);
       },
     );
   });
@@ -117,7 +125,14 @@ describe("tool-runtime config", () => {
         const runtime = createDefaultToolRuntime(workspaceRoot, {
           configFilePath: ".agents/review/vibe-config.json",
         });
-        expect(runtime.getAllowedToolNames()).toEqual(["read_file"]);
+        expect(runtime.getAllowedToolNames()).toEqual([
+          "read_file",
+          "task_create_many",
+          "task_list",
+          "task_update",
+          "task_update_status",
+          "task_validate_completion",
+        ]);
       },
     );
   });
@@ -163,5 +178,30 @@ describe("tool-runtime config", () => {
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
+  });
+
+  test("always exposes internal task tools even when explicitly denied", () => {
+    withWorkspace(
+      JSON.stringify({
+        models: {},
+        tool_runtime: {
+          write_scope: "read-only",
+          policy: {
+            default_policy: "deny",
+            tools: {
+              task_create_many: "deny",
+            },
+          },
+        },
+      }),
+      {},
+      (workspaceRoot) => {
+        const runtime = createDefaultToolRuntime(workspaceRoot);
+        expect(runtime.getAllowedToolNames()).toContain("task_create_many");
+        expect(runtime.getAllowedToolNames()).toContain(
+          "task_validate_completion",
+        );
+      },
+    );
   });
 });
