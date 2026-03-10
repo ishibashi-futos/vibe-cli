@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { RuntimeConfig } from "../domain/types";
 import {
   loadVibeConfigFile,
+  resolveConfigRelativeFileCandidates,
   resolveInstructionCandidates,
 } from "./vibe-config";
 
@@ -16,7 +17,7 @@ type ModelTokenLimitMap = Record<string, number>;
 type ModelStringMap = Record<string, string>;
 interface LoadedVibeModelConfig {
   defaultModel: string | null;
-  systemPrompt: string | null;
+  systemPromptFile: string | null;
   maxToolRounds: number | null;
   maxPreviewChars: number | null;
   mentionMaxLines: number | null;
@@ -31,6 +32,10 @@ interface LoadedVibeModelConfig {
 interface LoadedAgentInstruction {
   content: string | null;
   path: string | null;
+}
+
+interface LoadedSystemPromptFile {
+  content: string | null;
 }
 
 function readNonEmptyString(
@@ -68,7 +73,7 @@ function loadVibeModelConfig(
   if (!parsed) {
     return {
       defaultModel: null,
-      systemPrompt: null,
+      systemPromptFile: null,
       maxToolRounds: null,
       maxPreviewChars: null,
       mentionMaxLines: null,
@@ -86,7 +91,7 @@ function loadVibeModelConfig(
   const defaultModel =
     readNonEmptyString(parsed, "default_model") ??
     readNonEmptyString(parsed, "model");
-  const systemPrompt = readNonEmptyString(parsed, "system_prompt");
+  const systemPromptFile = readNonEmptyString(parsed, "system_prompt_file");
   const maxToolRounds = readPositiveInteger(parsed, "max_tool_rounds");
   const maxPreviewChars = readPositiveInteger(parsed, "max_preview_chars");
   const mentionMaxLines = readPositiveInteger(parsed, "mention_max_lines");
@@ -99,7 +104,7 @@ function loadVibeModelConfig(
   if (typeof models !== "object" || models === null || Array.isArray(models)) {
     return {
       defaultModel,
-      systemPrompt,
+      systemPromptFile,
       maxToolRounds,
       maxPreviewChars,
       mentionMaxLines,
@@ -152,7 +157,7 @@ function loadVibeModelConfig(
   }
   return {
     defaultModel,
-    systemPrompt,
+    systemPromptFile,
     maxToolRounds,
     maxPreviewChars,
     mentionMaxLines,
@@ -195,6 +200,30 @@ function loadAgentInstruction(
   };
 }
 
+function loadSystemPromptFile(
+  cwd: string,
+  systemPromptFile: string | null,
+  configDirectory: string,
+): LoadedSystemPromptFile {
+  const candidates = resolveConfigRelativeFileCandidates({
+    workspaceRoot: cwd,
+    configDirectory,
+    filePath: systemPromptFile,
+  });
+  for (const candidate of candidates) {
+    try {
+      const content = readFileSync(candidate, "utf8").trim();
+      if (content.length > 0) {
+        return { content };
+      }
+    } catch {
+      // ignore candidate and continue to next fallback
+    }
+  }
+
+  return { content: null };
+}
+
 function mergeSystemPrompt(
   defaultSystemPrompt: string,
   agentInstructionContent: string | null,
@@ -234,8 +263,13 @@ export function loadAppConfig(
   const cwd = process.cwd();
   const loaded = loadVibeModelConfig(cwd, options.configFilePath ?? null);
   const model = resolveConfiguredModel(loaded);
+  const loadedSystemPrompt = loadSystemPromptFile(
+    cwd,
+    loaded.systemPromptFile,
+    loaded.configDirectory,
+  );
   const loadedInstruction =
-    loaded.systemPrompt !== null
+    loadedSystemPrompt.content !== null
       ? { content: null, path: null }
       : loadAgentInstruction(
           cwd,
@@ -254,7 +288,7 @@ export function loadAppConfig(
     modelContextLengths: loaded.contextLengths,
     modelBaseUrls: loaded.baseUrls,
     modelApiKeys: loaded.apiKeys,
-    systemPrompt: loaded.systemPrompt ?? mergedSystemPrompt,
+    systemPrompt: loadedSystemPrompt.content ?? mergedSystemPrompt,
     agentInstructionPath: loadedInstruction.path,
     maxToolRounds: loaded.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS,
     maxPreviewChars: loaded.maxPreviewChars ?? DEFAULT_MAX_PREVIEW_CHARS,

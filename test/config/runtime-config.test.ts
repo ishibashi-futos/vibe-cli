@@ -71,7 +71,7 @@ describe("runtime-config", () => {
     withTestCwd(
       JSON.stringify({
         default_model: "gpt-x",
-        system_prompt: "sys",
+        system_prompt_file: "SYSTEM_PROMPT.md",
         enforce_tool_call_first_round: false,
         max_tool_rounds: 24,
         max_preview_chars: 2048,
@@ -89,7 +89,9 @@ describe("runtime-config", () => {
           },
         },
       }),
-      {},
+      {
+        "SYSTEM_PROMPT.md": "sys",
+      },
       () => {
         const config = loadAppConfig("default-system");
 
@@ -105,6 +107,27 @@ describe("runtime-config", () => {
         expect(config.modelTokenLimit).toBe(100000);
         expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
         expect(config.modelApiKeys["gpt-x"]).toBe("gpt-x-key");
+      },
+    );
+  });
+
+  test("falls back to default system prompt when system_prompt_file is missing", () => {
+    withTestCwd(
+      JSON.stringify({
+        system_prompt_file: "MISSING_SYSTEM_PROMPT.md",
+        models: {},
+      }),
+      {
+        "AGENTS.md": "project instructions",
+      },
+      () => {
+        const config = loadAppConfig("default-system");
+        expect(config.systemPrompt).toBe(
+          "default-system\n\nproject instructions",
+        );
+        expect(config.agentInstructionPath).toBe(
+          join(process.cwd(), "AGENTS.md"),
+        );
       },
     );
   });
@@ -172,6 +195,25 @@ describe("runtime-config", () => {
         expect(config.agentInstructionPath).toBe(
           join(process.cwd(), "AGENTS.md"),
         );
+      },
+    );
+  });
+
+  test("uses system_prompt_file instead of default system prompt and instruction_file", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {},
+        system_prompt_file: "SYSTEM_PROMPT.md",
+        instruction_file: "CLAUDE.md",
+      }),
+      {
+        "SYSTEM_PROMPT.md": "custom system prompt",
+        "CLAUDE.md": "custom instructions",
+      },
+      () => {
+        const config = loadAppConfig("default-system");
+        expect(config.systemPrompt).toBe("custom system prompt");
+        expect(config.agentInstructionPath).toBeNull();
       },
     );
   });

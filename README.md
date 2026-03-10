@@ -55,7 +55,7 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 {
   "default_model": "qwen2.5-coder-7b-instruct-mlx",
   "instruction_file": "CLAUDE.md",
-  "system_prompt": "Optional full system prompt override",
+  "system_prompt_file": "SYSTEM_PROMPT.md",
   "max_tool_rounds": 12,
   "max_preview_chars": 4000,
   "mention_max_lines": 100,
@@ -83,7 +83,10 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 - If configured `instruction_file` is missing, the app falls back to workspace root `AGENTS.md`.
 - `default_model` chooses the startup model by name and must match a key under `models`.
 - If `default_model` is omitted, the first entry under `models` is used.
-- `system_prompt` is optional. If omitted, the built-in prompt is used and `instruction_file` content is appended.
+- `system_prompt_file` is optional and can be absolute or relative.
+- Relative `system_prompt_file` is resolved from the selected config file's directory.
+- If `system_prompt_file` exists, its content replaces the built-in system prompt.
+- If `system_prompt_file` is missing, the built-in system prompt is used and `instruction_file` content is appended.
 - `max_tool_rounds`, `max_preview_chars`, `mention_max_lines`, `enforce_tool_call_first_round` are optional runtime settings.
 - `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).
 - `tool_runtime.policy.default_policy` is optional: `allow | deny` (default: `allow`).

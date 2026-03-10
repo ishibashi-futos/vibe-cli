@@ -86,3 +86,29 @@ export function resolveInstructionCandidates(params: {
 
   return candidates;
 }
+
+export function resolveConfigRelativeFileCandidates(params: {
+  workspaceRoot: string;
+  configDirectory: string;
+  filePath: string | null;
+}): string[] {
+  const { workspaceRoot, configDirectory, filePath } = params;
+  if (!filePath || filePath.length === 0) {
+    return [];
+  }
+
+  const candidates: string[] = [];
+  const configRelativeCandidate = isAbsolute(filePath)
+    ? filePath
+    : resolve(configDirectory, filePath);
+  candidates.push(configRelativeCandidate);
+
+  if (!isAbsolute(filePath)) {
+    const workspaceRelativeCandidate = resolve(workspaceRoot, filePath);
+    if (!candidates.includes(workspaceRelativeCandidate)) {
+      candidates.push(workspaceRelativeCandidate);
+    }
+  }
+
+  return candidates;
+}

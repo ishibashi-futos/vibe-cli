@@ -12,8 +12,8 @@
 - [ ] `/quit` 時、使用トークン数・API呼び出し回数を表示して終了する
 - [ ] Status bar の表示内容見直し: 知りたいのは token usage rate のみなので、使用量・Max Tokenは表示しない。lastは残す。
 - [x] `exec` サブコマンドで、指定した指示をユーザー確認せずにやり遂げる自律エージェントモードを起動する。
-- [ ] 環境変数 `OPENAI_*` の読み取りを廃止、configに統一する
-- [ ] `init` サブコマンド or `/init` により、`.agents/vibe-config` 等、設定ファイルの初期化を行う
+- [x] 環境変数 `OPENAI_*` の読み取りを廃止、configに統一する
+- [ ] `init` サブコマンド により、`.agents/vibe-config.json` 等、設定ファイルの初期化を行う
 - [x] `terminal-ui-kit`のstatus/log/error output APIに対応する
 - [x] `bypassPermissions` に対応して、制約で止められた場合に一時的なバイパスができるようにする。
 - [ ] `ToDo` 管理ツールができたら、ユーザー要求 > ToDo作成 > 実行 > VERIRYのループを組み込む
