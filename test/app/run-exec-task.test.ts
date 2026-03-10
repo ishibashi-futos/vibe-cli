@@ -32,6 +32,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     enforceToolCallFirstRound: false,
     mentionMaxLines: 100,
     modelTokenLimit: 1000,
+    chatWorkflowGateEnabled: true,
     ...overrides,
   };
 }

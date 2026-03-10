@@ -12,6 +12,7 @@ const DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-mlx";
 const DEFAULT_MAX_TOOL_ROUNDS = 12;
 const DEFAULT_MAX_PREVIEW_CHARS = 4000;
 const DEFAULT_MENTION_MAX_LINES = 100;
+const DEFAULT_CHAT_WORKFLOW_GATE_ENABLED = true;
 
 type ModelTokenLimitMap = Record<string, number>;
 type ModelStringMap = Record<string, string>;
@@ -21,6 +22,7 @@ interface LoadedVibeModelConfig {
   maxToolRounds: number | null;
   maxPreviewChars: number | null;
   mentionMaxLines: number | null;
+  chatWorkflowGateEnabled: boolean | null;
   enforceToolCallFirstRound: boolean | null;
   modelNames: string[];
   contextLengths: ModelTokenLimitMap;
@@ -77,6 +79,7 @@ function loadVibeModelConfig(
       maxToolRounds: null,
       maxPreviewChars: null,
       mentionMaxLines: null,
+      chatWorkflowGateEnabled: null,
       enforceToolCallFirstRound: null,
       modelNames: [],
       contextLengths: {},
@@ -95,6 +98,10 @@ function loadVibeModelConfig(
   const maxToolRounds = readPositiveInteger(parsed, "max_tool_rounds");
   const maxPreviewChars = readPositiveInteger(parsed, "max_preview_chars");
   const mentionMaxLines = readPositiveInteger(parsed, "mention_max_lines");
+  const chatWorkflowGateEnabled = readBoolean(
+    parsed,
+    "chat_workflow_gate_enabled",
+  );
   const enforceToolCallFirstRound = readBoolean(
     parsed,
     "enforce_tool_call_first_round",
@@ -108,6 +115,7 @@ function loadVibeModelConfig(
       maxToolRounds,
       maxPreviewChars,
       mentionMaxLines,
+      chatWorkflowGateEnabled,
       enforceToolCallFirstRound,
       modelNames: [],
       contextLengths: {},
@@ -161,6 +169,7 @@ function loadVibeModelConfig(
     maxToolRounds,
     maxPreviewChars,
     mentionMaxLines,
+    chatWorkflowGateEnabled,
     enforceToolCallFirstRound,
     modelNames,
     contextLengths,
@@ -303,5 +312,7 @@ export function loadAppConfig(
     enforceToolCallFirstRound: loaded.enforceToolCallFirstRound ?? true,
     modelTokenLimit: loaded.contextLengths[model] ?? null,
     mentionMaxLines: loaded.mentionMaxLines ?? DEFAULT_MENTION_MAX_LINES,
+    chatWorkflowGateEnabled:
+      loaded.chatWorkflowGateEnabled ?? DEFAULT_CHAT_WORKFLOW_GATE_ENABLED,
   };
 }

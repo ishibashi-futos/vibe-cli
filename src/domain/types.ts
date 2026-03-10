@@ -48,6 +48,7 @@ export interface RuntimeConfig {
   enforceToolCallFirstRound: boolean;
   modelTokenLimit: number | null;
   mentionMaxLines: number;
+  chatWorkflowGateEnabled: boolean;
 }
 
 export interface CompletionGateway {

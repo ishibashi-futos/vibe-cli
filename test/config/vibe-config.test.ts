@@ -23,6 +23,7 @@ describe("vibe-config", () => {
           max_tool_rounds: 12,
           max_preview_chars: 4000,
           mention_max_lines: 100,
+          chat_workflow_gate_enabled: true,
           enforce_tool_call_first_round: true,
           tool_runtime: {
             write_scope: "workspace-write",

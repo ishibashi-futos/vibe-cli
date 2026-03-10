@@ -53,6 +53,7 @@ describe("runtime-config", () => {
         expect(config.maxPreviewChars).toBe(4000);
         expect(config.enforceToolCallFirstRound).toBe(true);
         expect(config.mentionMaxLines).toBe(100);
+        expect(config.chatWorkflowGateEnabled).toBe(true);
         expect(config.modelTokenLimit).toBe(32768);
         expect(config.modelContextLengths).toEqual({
           "qwen2.5-coder-7b-instruct-mlx": 32768,
@@ -76,6 +77,7 @@ describe("runtime-config", () => {
         max_tool_rounds: 24,
         max_preview_chars: 2048,
         mention_max_lines: 42,
+        chat_workflow_gate_enabled: false,
         models: {
           "qwen2.5-coder-7b-instruct-mlx": {
             context_length: 32768,
@@ -104,6 +106,7 @@ describe("runtime-config", () => {
         expect(config.maxToolRounds).toBe(24);
         expect(config.maxPreviewChars).toBe(2048);
         expect(config.mentionMaxLines).toBe(42);
+        expect(config.chatWorkflowGateEnabled).toBe(false);
         expect(config.modelTokenLimit).toBe(100000);
         expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
         expect(config.modelApiKeys["gpt-x"]).toBe("gpt-x-key");

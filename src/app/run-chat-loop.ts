@@ -54,6 +54,7 @@ const HELP_LINES = [
   "Available slash commands:",
   "  /help   Show help",
   "  /model  Show/change model",
+  "  /workflow Show/change chat workflow gate",
   "  /status Show current session status",
   "  /new    Start a new session",
   "  /exit   Exit",
@@ -89,6 +90,7 @@ function formatStatus(params: {
   lastUsage: OpenAIUsage | null;
   cumulativeUsage: OpenAIUsage;
   tokenLimit: number | null;
+  workflowGateEnabled: boolean;
   toolRuntimeSecurity: {
     writeScope: "read-only" | "workspace-write" | "unrestricted";
     defaultPolicy: "allow" | "deny";
@@ -104,6 +106,7 @@ function formatStatus(params: {
     lastUsage,
     cumulativeUsage,
     tokenLimit,
+    workflowGateEnabled,
     toolRuntimeSecurity,
   } = params;
   const lines = [
@@ -112,6 +115,7 @@ function formatStatus(params: {
     `instruction_file=${agentInstructionPath ?? "N/A"}`,
     `configured_models=${configuredModelCount}`,
     `messages=${messageCount}`,
+    `chat_workflow_gate=${workflowGateEnabled ? "on" : "off"}`,
     `tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
     `tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
   ];
@@ -203,6 +207,7 @@ export async function runChatLoop({
   let currentApiKey = config.apiKey;
   let lastUsage: OpenAIUsage | null = null;
   let cumulativeUsage = createZeroUsage();
+  let chatWorkflowGateEnabled = config.chatWorkflowGateEnabled;
   const configuredModelNames = Array.from(
     new Set([
       ...Object.keys(config.modelContextLengths),
@@ -263,6 +268,7 @@ export async function runChatLoop({
               lastUsage,
               cumulativeUsage,
               tokenLimit: resolveTokenLimit(currentModel),
+              workflowGateEnabled: chatWorkflowGateEnabled,
               toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
             });
             for (const line of statusLines) {
@@ -311,6 +317,43 @@ export async function runChatLoop({
           },
         },
         {
+          name: "workflow",
+          description: "Show/change chat workflow gate",
+          callback: (args) => {
+            consumedSlashCommand = true;
+            const action = args[0]?.toLowerCase() ?? "status";
+
+            if (action === "status") {
+              io.writeStatus(
+                `chat workflow gate is ${chatWorkflowGateEnabled ? "on" : "off"}`,
+              );
+              return;
+            }
+
+            if (action === "on") {
+              chatWorkflowGateEnabled = true;
+              io.writeStatus("chat workflow gate enabled");
+              return;
+            }
+
+            if (action === "off") {
+              chatWorkflowGateEnabled = false;
+              io.writeStatus("chat workflow gate disabled");
+              return;
+            }
+
+            if (action === "toggle") {
+              chatWorkflowGateEnabled = !chatWorkflowGateEnabled;
+              io.writeStatus(
+                `chat workflow gate ${chatWorkflowGateEnabled ? "enabled" : "disabled"}`,
+              );
+              return;
+            }
+
+            io.writeError("[error] usage: /workflow [status|on|off|toggle]");
+          },
+        },
+        {
           name: "new",
           description: "Start a new session",
           callback: () => {
@@ -318,6 +361,7 @@ export async function runChatLoop({
             messages = [{ role: "system", content: config.systemPrompt }];
             lastUsage = null;
             cumulativeUsage = createZeroUsage();
+            chatWorkflowGateEnabled = config.chatWorkflowGateEnabled;
             io.resetSessionUiState();
             io.updateTokenStatus({
               model: currentModel,
@@ -495,7 +539,9 @@ export async function runChatLoop({
           break;
         }
 
-        activateWorkflowGate(workflowGate);
+        if (chatWorkflowGateEnabled) {
+          activateWorkflowGate(workflowGate);
+        }
         messages = withAssistantToolCalls(
           messages,
           getAssistantContent(assistantMessage),

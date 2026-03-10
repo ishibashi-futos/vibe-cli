@@ -111,6 +111,7 @@ High-level agent loop:
 
 - `/help`: Show available commands
 - `/model`: Select and switch model from configured entries
+- `/workflow`: Show or toggle chat workflow gate (`status|on|off|toggle`)
 - `/status`: Show current model and token usage
 - `/new`: Start a new session (full reset)
 - `/exit`: Exit
@@ -132,6 +133,7 @@ High-level agent loop:
   "max_tool_rounds": 12,
   "max_preview_chars": 4000,
   "mention_max_lines": 100,
+  "chat_workflow_gate_enabled": true,
   "enforce_tool_call_first_round": true,
   "tool_runtime": {
     "write_scope": "workspace-write",
@@ -163,7 +165,8 @@ High-level agent loop:
 - Relative `system_prompt_file` is resolved from the selected config file's directory.
 - If `system_prompt_file` exists, its content is appended after the built-in workflow contract.
 - If `system_prompt_file` is missing, the built-in system prompt is used and `instruction_file` content is appended.
-- `max_tool_rounds`, `max_preview_chars`, `mention_max_lines`, `enforce_tool_call_first_round` are optional runtime settings.
+- `max_tool_rounds`, `max_preview_chars`, `mention_max_lines`, `chat_workflow_gate_enabled`, `enforce_tool_call_first_round` are optional runtime settings.
+- `chat_workflow_gate_enabled` controls whether chat mode enforces the analysis/todo/verify workflow by default for the session. You can override it at runtime with `/workflow`.
 - `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).
 - `tool_runtime.policy.default_policy` is optional: `allow | deny` (default: `allow`).
 - `tool_runtime.policy.tools` is optional per-tool override map (`allow | deny`).

@@ -132,6 +132,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     enforceToolCallFirstRound: false,
     mentionMaxLines: 100,
     modelTokenLimit: 1000,
+    chatWorkflowGateEnabled: true,
     ...overrides,
   };
 }
@@ -455,6 +456,169 @@ describe("runChatLoop", () => {
         line.includes("explicit_deny_tools=exec_command,write_file"),
       ),
     ).toBe(true);
+    expect(logs.some((line) => line.includes("chat_workflow_gate=on"))).toBe(
+      true,
+    );
+  });
+
+  test("toggles chat workflow gate with /workflow", async () => {
+    const { io, logs } = createTestIO([
+      "/workflow status",
+      "/workflow off",
+      "/status",
+      "/workflow toggle",
+      "/workflow status",
+      "/exit",
+    ]);
+
+    const completionGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: null,
+          usage: null,
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig(),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(logs).toContain("chat workflow gate is on");
+    expect(logs).toContain("chat workflow gate disabled");
+    expect(logs.some((line) => line.includes("chat_workflow_gate=off"))).toBe(
+      true,
+    );
+    expect(logs).toContain("chat workflow gate enabled");
+    expect(logs).toContain("chat workflow gate is on");
+  });
+
+  test("resets chat workflow gate to config default on /new", async () => {
+    const { io, logs } = createTestIO([
+      "/workflow off",
+      "/new",
+      "/status",
+      "/exit",
+    ]);
+
+    const completionGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: null,
+          usage: null,
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig({ chatWorkflowGateEnabled: true }),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(logs.some((line) => line.includes("chat_workflow_gate=on"))).toBe(
+      true,
+    );
+  });
+
+  test("does not enforce workflow gate in chat when disabled by config", async () => {
+    const { io, logs } = createTestIO(["please fix", "/exit"]);
+    let requestCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return {
+            message: {
+              role: "assistant",
+              content: "",
+              tool_calls: [
+                {
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "read_file",
+                    arguments: '{"path":"README.md"}',
+                  },
+                },
+              ],
+              refusal: null,
+            },
+            usage: usage(4),
+          };
+        }
+
+        return {
+          message: {
+            role: "assistant",
+            content: "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file", "task_create_many", "task_validate_completion"];
+      },
+      async invoke() {
+        return {
+          status: "success",
+          data: { path: "README.md", content: "hello", truncated: false },
+        };
+      },
+    };
+
+    await runChatLoop({
+      config: createConfig({
+        chatWorkflowGateEnabled: false,
+        maxToolRounds: 2,
+      }),
+      completionGateway,
+      toolRuntime,
+      io,
+    });
+
+    expect(
+      logs.some((line) =>
+        line.includes("workflow gate blocked final response"),
+      ),
+    ).toBe(false);
+    expect(logs).toContain("done");
   });
 
   test("retries blocked tool call with SecurityBypass when user approves", async () => {
