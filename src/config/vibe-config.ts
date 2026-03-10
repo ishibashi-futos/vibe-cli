@@ -1,8 +1,34 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 const DEFAULT_CONFIG_RELATIVE_PATH = ".agents/vibe-config.json";
 const DEFAULT_AGENT_INSTRUCTION_FILE = "AGENTS.md";
+const DEFAULT_CONFIG_TEMPLATE = {
+  default_model: "model_name",
+  max_tool_rounds: 12,
+  max_preview_chars: 4000,
+  mention_max_lines: 100,
+  enforce_tool_call_first_round: true,
+  tool_runtime: {
+    write_scope: "workspace-write",
+    policy: {
+      default_policy: "deny",
+      tools: {
+        read_file: "allow",
+        tree: "allow",
+        regexp_search: "allow",
+        ast_grep_search: "allow",
+      },
+    },
+  },
+  models: {
+    model_name: {
+      context_length: 32768,
+      base_url: "http://localhost:1234/v1",
+      api_key: "lmstudio",
+    },
+  },
+};
 
 interface LoadedVibeConfigFile {
   path: string;
@@ -49,6 +75,24 @@ export function loadVibeConfigFile(
       parsed: null,
     };
   }
+}
+
+export function buildDefaultVibeConfigContent(): string {
+  return `${JSON.stringify(DEFAULT_CONFIG_TEMPLATE, null, 2)}\n`;
+}
+
+export function initializeVibeConfig(
+  workspaceRoot: string,
+  configFilePath: string | null = null,
+): string {
+  const path = resolveVibeConfigPath(workspaceRoot, configFilePath);
+  if (existsSync(path)) {
+    throw new Error(`config file already exists: ${path}`);
+  }
+
+  mkdirSync(resolve(path, ".."), { recursive: true });
+  writeFileSync(path, buildDefaultVibeConfigContent(), "utf8");
+  return path;
 }
 
 export function resolveInstructionCandidates(params: {

@@ -2,7 +2,10 @@ import { runChatLoop } from "../app/run-chat-loop";
 import { runExecTask } from "../app/run-exec-task";
 import { parseCliArgs } from "./argv";
 import { loadAppConfig, type AppConfig } from "../config/runtime-config";
-import { resolveVibeConfigPath } from "../config/vibe-config";
+import {
+  initializeVibeConfig,
+  resolveVibeConfigPath,
+} from "../config/vibe-config";
 import { buildDefaultSystemPrompt } from "../domain/policies";
 import { createConsoleIO } from "../infra/console-io";
 import { createOpenAICompletionGateway } from "../infra/openai-client";
@@ -25,6 +28,21 @@ const parsed = parseCliArgs(process.argv.slice(2));
 if (!parsed.ok) {
   io.writeError(parsed.error);
   process.exit(1);
+}
+
+if (parsed.mode === "init") {
+  try {
+    const configPath = initializeVibeConfig(
+      process.cwd(),
+      parsed.configFilePath,
+    );
+    io.writeStatus(`initialized config: ${configPath}`);
+    process.exit(0);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    io.writeError(message);
+    process.exit(1);
+  }
 }
 
 const toolRuntime = createDefaultToolRuntime(process.cwd(), {

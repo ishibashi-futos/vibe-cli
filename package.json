@@ -7,7 +7,8 @@
     "chat": "bun run --watch src/cli/index.ts",
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit ",
-    "sanity": "bun run format && bun run typecheck && bun test"
+    "sanity": "bun run format && bun run typecheck && bun test",
+    "config:init": "bun run src/cli/index.ts -- init"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",

@@ -47,6 +47,8 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 
 - The app reads model definitions from `.agents/vibe-config.json` by default.
 - You can override config file with `-c <path>` or `--config-file <path>` in both chat and exec modes.
+- `init` creates `.agents/vibe-config.json` with required keys and placeholders.
+- `init` fails if the target config file already exists.
 - Agent instruction file defaults to `AGENTS.md` at workspace root.
 - You can override instruction file path with `instruction_file` in `.agents/vibe-config.json` (for example, `CLAUDE.md`).
 - JSON schema:
@@ -54,8 +56,6 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 ```json
 {
   "default_model": "qwen2.5-coder-7b-instruct-mlx",
-  "instruction_file": "CLAUDE.md",
-  "system_prompt_file": "SYSTEM_PROMPT.md",
   "max_tool_rounds": 12,
   "max_preview_chars": 4000,
   "mention_max_lines": 100,
@@ -63,9 +63,12 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
   "tool_runtime": {
     "write_scope": "workspace-write",
     "policy": {
-      "default_policy": "allow",
+      "default_policy": "deny",
       "tools": {
-        "exec_command": "deny"
+        "read_file": "allow",
+        "tree": "allow",
+        "regexp_search": "allow",
+        "ast_grep_search": "allow"
       }
     }
   },
@@ -91,6 +94,7 @@ echo "Review current changes and summarize risks" | bun run src/cli/index.ts exe
 - `tool_runtime.write_scope` is optional: `read-only | workspace-write | unrestricted` (default: `workspace-write`).
 - `tool_runtime.policy.default_policy` is optional: `allow | deny` (default: `allow`).
 - `tool_runtime.policy.tools` is optional per-tool override map (`allow | deny`).
+- `init` generates a conservative starter policy: `default_policy: "deny"` with only read-only workspace inspection tools allowed by default.
 - `/model` can switch only to model names defined under `models`.
 - `base_url` / `api_key` are configured per model under `models`.
 

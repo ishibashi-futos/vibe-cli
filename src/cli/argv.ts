@@ -11,6 +11,11 @@ export type ParsedCliArgs =
       instructionArgs: string[];
     }
   | {
+      ok: true;
+      mode: "init";
+      configFilePath: string | null;
+    }
+  | {
       ok: false;
       error: string;
     };
@@ -100,6 +105,21 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   }
 
   const subcommand = positional[0];
+  if (subcommand === "init") {
+    if (positional.length > 1) {
+      return {
+        ok: false,
+        error: "init does not accept positional arguments",
+      };
+    }
+
+    return {
+      ok: true,
+      mode: "init",
+      configFilePath,
+    };
+  }
+
   if (subcommand !== "exec") {
     return {
       ok: false,

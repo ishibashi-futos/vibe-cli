@@ -44,6 +44,25 @@ describe("parseCliArgs", () => {
     });
   });
 
+  test("parses init mode", () => {
+    const parsed = parseCliArgs(["init"]);
+
+    expect(parsed).toEqual({
+      ok: true,
+      mode: "init",
+      configFilePath: null,
+    });
+  });
+
+  test("fails when init receives positional arguments", () => {
+    const parsed = parseCliArgs(["init", "extra"]);
+
+    expect(parsed).toEqual({
+      ok: false,
+      error: "init does not accept positional arguments",
+    });
+  });
+
   test("fails when config file option has no value", () => {
     const parsed = parseCliArgs(["exec", "-c"]);
     expect(parsed).toEqual({
