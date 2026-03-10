@@ -17,8 +17,8 @@
     "typescript": "^5"
   },
   "dependencies": {
-    "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.5.0",
+    "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.6.0",
     "openai": "^6.25.0",
-    "terminal-ui-kit": "github:ishibashi-futos/terminal-ui-kit#v0.2.1"
+    "terminal-ui-kit": "github:ishibashi-futos/terminal-ui-kit#v0.3.0"
   }
 }

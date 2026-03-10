@@ -5,9 +5,9 @@
     "": {
       "name": "vibe-cli",
       "dependencies": {
-        "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.5.0",
-        "terminal-ui-kit": "github:ishibashi-futos/terminal-ui-kit#v0.2.1",
+        "agent-tools-ts": "github:ishibashi-futos/agent-tools-ts#v0.6.0",
         "openai": "^6.25.0",
+        "terminal-ui-kit": "github:ishibashi-futos/terminal-ui-kit#v0.3.0",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.4.5",
@@ -41,13 +41,13 @@
 
     "@types/node": ["@types/node@25.3.2", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-RpV6r/ij22zRRdyBPcxDeKAzH43phWVKEjL2iksqo1Vz3CuBUrgmPpPhALKiRfU7OMCmeeO9vECBMsV0hMTG8Q=="],
 
-    "agent-tools-ts": ["agent-tools-ts@github:ishibashi-futos/agent-tools-ts#f178dcb", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-agent-tools-ts-f178dcb", "sha512-BawM9uqTkwU2V2h802lzFDbubeEAMgFGsLK6yN9GEbFC4LNdbiA26CbipWQ3cs8Oh5AaHV4iWcV2aXd2NOXKWQ=="],
+    "agent-tools-ts": ["agent-tools-ts@github:ishibashi-futos/agent-tools-ts#3f3645d", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-agent-tools-ts-3f3645d", "sha512-AbN0wg06Neg7ZmOdeVbrTmnsWqoXnjqZW+tisoh/6QWgBpaPdLtSjGNTYWcRPv2XTi3jJG+7JYqUsX+LQxEieQ=="],
 
     "bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
 
     "openai": ["openai@6.25.0", "", { "peerDependencies": { "ws": "^8.18.0", "zod": "^3.25 || ^4.0" }, "optionalPeers": ["ws", "zod"], "bin": { "openai": "bin/cli" } }, "sha512-mEh6VZ2ds2AGGokWARo18aPISI1OhlgdEIC1ewhkZr8pSIT31dec0ecr9Nhxx0JlybyOgoAT1sWeKtwPZzJyww=="],
 
-    "terminal-ui-kit": ["terminal-ui-kit@github:ishibashi-futos/terminal-ui-kit#7d43b1b", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-terminal-ui-kit-7d43b1b", "sha512-w5zggdhkEkZbTD32e/mAPEoRHZuvYsBYRTjY6OpkjsRGD5x9odLhT4h/itT+ESJCSWtPseF97ClrL4NPSJs7bw=="],
+    "terminal-ui-kit": ["terminal-ui-kit@github:ishibashi-futos/terminal-ui-kit#abdfe24", { "peerDependencies": { "typescript": "^5" } }, "ishibashi-futos-terminal-ui-kit-abdfe24", "sha512-mEJJ497pf+RU5pMCXzOmHHPDblCaPE+nCMfnBmIi/XOtz0F/ozT7bAEbUH7plU0casR3e0QsRt2vb/aTvepI3w=="],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
