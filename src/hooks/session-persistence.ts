@@ -4,12 +4,7 @@ import type {
   SessionStateSnapshot,
 } from "../domain/types";
 import { appendSessionEvent, initializeSessionLog } from "../session/store";
-import type {
-  HookContext,
-  HookInitContext,
-  HookModule,
-  HookResult,
-} from "./types";
+import type { HookInitContext, HookModule, HookResult } from "./types";
 
 const SESSION_PERSISTENCE_ENV = "VIBE_CLI_ENABLE_SESSION_PERSISTENCE";
 

@@ -94,7 +94,8 @@ describe("chat-orchestrator", () => {
 
     expect(calls).toEqual(["auto", "required"]);
     expect(result.retriedWithRequired).toBe(true);
-    expect(getToolCalls(result.message!)).toHaveLength(1);
+    expect(result.message).not.toBeNull();
+    expect(getToolCalls(result.message as AssistantMessage)).toHaveLength(1);
     expect(result.usage?.total_tokens).toBe(30);
   });
 
@@ -132,7 +133,8 @@ describe("chat-orchestrator", () => {
 
     expect(calls).toEqual(["auto"]);
     expect(result.retriedWithRequired).toBe(false);
-    expect(getAssistantContent(result.message!)).toBe("ok");
+    expect(result.message).not.toBeNull();
+    expect(getAssistantContent(result.message as AssistantMessage)).toBe("ok");
     expect(result.usage?.total_tokens).toBe(12);
   });
 

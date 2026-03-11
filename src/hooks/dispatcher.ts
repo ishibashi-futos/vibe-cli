@@ -27,7 +27,7 @@ function shouldHandlePhase(
   return phases[phase] === true;
 }
 
-function normalizeHookResult(result: HookResult | void): HookResult {
+function normalizeHookResult(result: HookResult | undefined): HookResult {
   return result ?? { kind: "continue" };
 }
 

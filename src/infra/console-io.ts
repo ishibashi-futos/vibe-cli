@@ -24,8 +24,7 @@ export function createConsoleIO(): ConsoleIO {
       return "";
     }
 
-    const { model, baseUrl, lastUsage, cumulativeUsage, tokenLimit } =
-      tokenStatus;
+    const { model, lastUsage, cumulativeUsage, tokenLimit } = tokenStatus;
     const lastTotal = lastUsage?.total_tokens;
     const parts = [
       `model=${model}`,

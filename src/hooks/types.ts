@@ -66,7 +66,7 @@ export interface HookModule {
   handle(
     event: HookEvent,
     context: HookContext,
-  ): Promise<HookResult | void> | HookResult | void;
+  ): Promise<HookResult | undefined> | HookResult | undefined;
   recordHookResult?(
     params: {
       event: HookEvent;

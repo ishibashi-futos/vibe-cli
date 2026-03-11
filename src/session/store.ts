@@ -31,18 +31,6 @@ function toLocalTimestampPart(date: Date): string {
   return `${year}${month}${day}${hour}${minute}${second}`;
 }
 
-function cloneUsage(usage: OpenAIUsage | null): OpenAIUsage | null {
-  if (!usage) {
-    return null;
-  }
-
-  return {
-    prompt_tokens: usage.prompt_tokens,
-    completion_tokens: usage.completion_tokens,
-    total_tokens: usage.total_tokens,
-  };
-}
-
 function createDefaultState(model: string): SessionStateSnapshot {
   return {
     currentModel: model,

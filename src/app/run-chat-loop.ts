@@ -23,13 +23,11 @@ import type {
   OpenAIUsage,
   RuntimeConfig,
   SessionStateSnapshot,
-  SessionSummary,
   SlashCommand,
   ToolRuntime,
 } from "../domain/types";
 import {
   activateWorkflowGate,
-  buildWorkflowFinalContinuationMessage,
   createWorkflowGate,
   recordWorkflowToolSuccess,
   resetWorkflowGate,
