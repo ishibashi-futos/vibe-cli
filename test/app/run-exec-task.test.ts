@@ -25,6 +25,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     workspaceRoot,
     configDirectory: join(workspaceRoot, ".agents"),
+    configFilePath: join(workspaceRoot, ".agents", "vibe-config.json"),
     baseUrl: "http://localhost:1234/v1",
     apiKey: "lmstudio",
     model: "test-model",

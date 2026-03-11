@@ -16,6 +16,12 @@ export type ParsedCliArgs =
       configFilePath: string | null;
     }
   | {
+      ok: true;
+      mode: "resume";
+      configFilePath: string | null;
+      sessionSelector: string | null;
+    }
+  | {
       ok: false;
       error: string;
     };
@@ -117,6 +123,22 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       ok: true,
       mode: "init",
       configFilePath,
+    };
+  }
+
+  if (subcommand === "resume") {
+    if (positional.length > 2) {
+      return {
+        ok: false,
+        error: "resume accepts at most one session selector",
+      };
+    }
+
+    return {
+      ok: true,
+      mode: "resume",
+      configFilePath,
+      sessionSelector: positional[1] ?? null,
     };
   }
 

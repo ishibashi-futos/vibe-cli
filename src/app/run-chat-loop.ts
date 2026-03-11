@@ -18,8 +18,11 @@ import type {
   ChatMessage,
   CompletionGateway,
   ConsoleIO,
+  LoadedSession,
   OpenAIUsage,
   RuntimeConfig,
+  SessionStateSnapshot,
+  SessionSummary,
   SlashCommand,
   ToolRuntime,
 } from "../domain/types";
@@ -33,17 +36,25 @@ import {
   buildWorkflowFinalContinuationMessage,
   createWorkflowGate,
   recordWorkflowToolSuccess,
+  resetWorkflowGate,
   shouldBlockToolExecution,
 } from "../domain/workflow-gate";
 import { buildHookContinuationMessage } from "../hooks/continuation-message";
-import { createHookDispatcher } from "../hooks/dispatcher";
+import { createHookDispatcher, type HookDispatcher } from "../hooks/dispatcher";
 import type { HookPhase } from "../domain/types";
+import {
+  createSessionFilePath,
+  listSessionSummaries,
+  loadSession,
+  resolveSessionSelector,
+} from "../session/store";
 
 interface RunChatLoopDeps {
   config: RuntimeConfig;
   completionGateway: CompletionGateway;
   toolRuntime: ToolRuntime;
   io: ConsoleIO;
+  resumeSelector?: string | null;
   onExit?: () => void;
 }
 
@@ -61,6 +72,7 @@ const HELP_LINES = [
   "  /workflow Show/change chat workflow gate",
   "  /status Show current session status",
   "  /new    Start a new session",
+  "  /resume Resume a saved session",
   "  /exit   Exit",
   "  /quit   Exit (alias)",
 ];
@@ -86,6 +98,8 @@ function addUsage(base: OpenAIUsage, delta: OpenAIUsage | null): OpenAIUsage {
 }
 
 function formatStatus(params: {
+  sessionId: string;
+  sessionPath: string;
   model: string;
   baseUrl: string;
   agentInstructionPath: string | null;
@@ -95,6 +109,7 @@ function formatStatus(params: {
   cumulativeUsage: OpenAIUsage;
   tokenLimit: number | null;
   workflowGateEnabled: boolean;
+  activeHooks: string[];
   toolRuntimeSecurity: {
     writeScope: "read-only" | "workspace-write" | "unrestricted";
     defaultPolicy: "allow" | "deny";
@@ -111,15 +126,19 @@ function formatStatus(params: {
     cumulativeUsage,
     tokenLimit,
     workflowGateEnabled,
+    activeHooks,
     toolRuntimeSecurity,
   } = params;
   const lines = [
+    `session_id=${params.sessionId}`,
+    `session_file=${params.sessionPath}`,
     `model=${model}`,
     `base_url=${baseUrl}`,
     `instruction_file=${agentInstructionPath ?? "N/A"}`,
     `configured_models=${configuredModelCount}`,
     `messages=${messageCount}`,
     `chat_workflow_gate=${workflowGateEnabled ? "on" : "off"}`,
+    `hooks=${activeHooks.length > 0 ? activeHooks.join(",") : "none"}`,
     `tokens(last) prompt=${lastUsage?.prompt_tokens ?? "N/A"} completion=${lastUsage?.completion_tokens ?? "N/A"} total=${lastUsage?.total_tokens ?? "N/A"}`,
     `tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
   ];
@@ -140,6 +159,24 @@ function formatStatus(params: {
   }
 
   return lines;
+}
+
+function buildSessionStateSnapshot(params: {
+  currentModel: string;
+  workflowGateEnabled: boolean;
+  lastUsage: OpenAIUsage | null;
+  cumulativeUsage: OpenAIUsage;
+}): SessionStateSnapshot {
+  return {
+    currentModel: params.currentModel,
+    workflowGateEnabled: params.workflowGateEnabled,
+    lastUsage: params.lastUsage,
+    cumulativeUsage: params.cumulativeUsage,
+  };
+}
+
+function createDefaultMessages(systemPrompt: string): ChatMessage[] {
+  return [{ role: "system", content: systemPrompt }];
 }
 
 function isReadFileOutput(value: Record<string, unknown>): value is {
@@ -197,6 +234,7 @@ export async function runChatLoop({
   completionGateway,
   toolRuntime,
   io,
+  resumeSelector = null,
   onExit,
 }: RunChatLoopDeps): Promise<void> {
   const tools = toolRuntime.getAllowedTools();
@@ -206,19 +244,24 @@ export async function runChatLoop({
     activated: false,
     availableToolNames,
   });
-  let sessionId = randomUUID();
-  let currentPhase: HookPhase | undefined;
-  const hookDispatcher = await createHookDispatcher({
-    config,
-    mode: "chat",
-    workflowGate,
-    getSessionId: () => sessionId,
-    logger: io,
+  let sessionId: string = randomUUID();
+  let sessionPath = createSessionFilePath({
+    workspaceRoot: config.workspaceRoot,
+    sessionId,
   });
+  let currentPhase: HookPhase | undefined;
+  const createDispatcher = () =>
+    createHookDispatcher({
+      config,
+      mode: "chat",
+      workflowGate,
+      getSessionId: () => sessionId,
+      getSessionPath: () => sessionPath,
+      logger: io,
+    });
+  let hookDispatcher: HookDispatcher = await createDispatcher();
 
-  let messages: ChatMessage[] = [
-    { role: "system", content: config.systemPrompt },
-  ];
+  let messages: ChatMessage[] = createDefaultMessages(config.systemPrompt);
   let currentModel = config.model;
   let currentBaseUrl = config.baseUrl;
   let currentApiKey = config.apiKey;
@@ -241,6 +284,75 @@ export async function runChatLoop({
 
   currentBaseUrl = resolveBaseUrl(currentModel);
   currentApiKey = resolveApiKey(currentModel);
+
+  const getSessionStateSnapshot = (): SessionStateSnapshot =>
+    buildSessionStateSnapshot({
+      currentModel,
+      workflowGateEnabled: chatWorkflowGateEnabled,
+      lastUsage,
+      cumulativeUsage,
+    });
+
+  const appendSessionStateChanged = async () => {
+    await hookDispatcher.dispatch({
+      name: "session.state.changed",
+      phase: currentPhase,
+      payload: {
+        state: getSessionStateSnapshot(),
+      },
+    });
+  };
+
+  const loadSavedSession = async (
+    selector: string | null,
+  ): Promise<LoadedSession> => {
+    if (selector) {
+      return loadSession(
+        resolveSessionSelector({
+          workspaceRoot: config.workspaceRoot,
+          selector,
+        }),
+      );
+    }
+
+    const summaries = listSessionSummaries(config.workspaceRoot);
+    if (summaries.length === 0) {
+      throw new Error("no saved sessions found");
+    }
+
+    const selectedPath = await io.selectSession(summaries, sessionId);
+    return loadSession(selectedPath);
+  };
+
+  const applyLoadedSession = (loaded: LoadedSession) => {
+    messages =
+      loaded.messages.length > 0
+        ? loaded.messages
+        : createDefaultMessages(config.systemPrompt);
+    sessionId = loaded.sessionId;
+    sessionPath = loaded.path;
+    currentModel = loaded.state.currentModel;
+    if (
+      !configuredModelNames.includes(currentModel) &&
+      currentModel !== config.model
+    ) {
+      io.writeStatus(
+        `[session] saved model "${currentModel}" is unavailable; falling back to ${config.model}`,
+      );
+      currentModel = config.model;
+    }
+    currentBaseUrl = resolveBaseUrl(currentModel);
+    currentApiKey = resolveApiKey(currentModel);
+    lastUsage = loaded.state.lastUsage;
+    cumulativeUsage = loaded.state.cumulativeUsage;
+    chatWorkflowGateEnabled = loaded.state.workflowGateEnabled;
+    resetWorkflowGate(workflowGate);
+  };
+
+  const reinitializeHookDispatcher = async () => {
+    await hookDispatcher.dispose();
+    hookDispatcher = await createDispatcher();
+  };
 
   io.updateTokenStatus({
     model: currentModel,
@@ -273,8 +385,7 @@ export async function runChatLoop({
       name: "message.appended",
       phase: currentPhase,
       payload: {
-        role: "user",
-        content,
+        message: messages.at(-1),
       },
     });
   };
@@ -284,8 +395,7 @@ export async function runChatLoop({
       name: "message.appended",
       phase: currentPhase,
       payload: {
-        role: "assistant",
-        content,
+        message: messages.at(-1),
       },
     });
   };
@@ -298,9 +408,7 @@ export async function runChatLoop({
       name: "message.appended",
       phase: currentPhase,
       payload: {
-        role: "assistant",
-        content,
-        toolCallCount: toolCalls.length,
+        message: messages.at(-1),
       },
     });
   };
@@ -310,20 +418,48 @@ export async function runChatLoop({
       name: "message.appended",
       phase: currentPhase,
       payload: {
-        role: "tool",
-        toolCallId,
+        message: messages.at(-1),
       },
     });
   };
+
+  if (resumeSelector !== null) {
+    const loaded = await loadSavedSession(resumeSelector);
+    applyLoadedSession(loaded);
+    await reinitializeHookDispatcher();
+    io.resetSessionUiState();
+    io.updateTokenStatus({
+      model: currentModel,
+      baseUrl: currentBaseUrl,
+      lastUsage,
+      cumulativeUsage,
+      tokenLimit: resolveTokenLimit(currentModel),
+    });
+    await hookDispatcher.dispatch({
+      name: "session.loaded",
+      payload: {
+        sessionId,
+        sessionPath,
+        state: getSessionStateSnapshot(),
+      },
+    });
+  }
 
   await hookDispatcher.dispatch({
     name: "run.started",
     payload: { model: currentModel },
   });
-  await hookDispatcher.dispatch({
-    name: "session.started",
-    payload: { sessionId },
-  });
+  if (resumeSelector === null) {
+    await hookDispatcher.dispatch({
+      name: "session.started",
+      payload: {
+        sessionId,
+        sessionPath,
+        state: getSessionStateSnapshot(),
+        message: messages[0],
+      },
+    });
+  }
 
   try {
     while (true) {
@@ -347,6 +483,8 @@ export async function runChatLoop({
             callback: () => {
               consumedSlashCommand = true;
               const statusLines = formatStatus({
+                sessionId,
+                sessionPath,
                 model: currentModel,
                 baseUrl: currentBaseUrl,
                 agentInstructionPath: config.agentInstructionPath,
@@ -356,6 +494,7 @@ export async function runChatLoop({
                 cumulativeUsage,
                 tokenLimit: resolveTokenLimit(currentModel),
                 workflowGateEnabled: chatWorkflowGateEnabled,
+                activeHooks: config.hooks.map((hook) => hook.hookName),
                 toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
               });
               for (const line of statusLines) {
@@ -401,14 +540,7 @@ export async function runChatLoop({
               io.writeStatus(
                 `switched model to ${currentModel} (base_url=${currentBaseUrl})`,
               );
-              void hookDispatcher.dispatch({
-                name: "session.state.changed",
-                phase: currentPhase,
-                payload: {
-                  key: "model",
-                  value: currentModel,
-                },
-              });
+              void appendSessionStateChanged();
             },
           },
           {
@@ -428,28 +560,14 @@ export async function runChatLoop({
               if (action === "on") {
                 chatWorkflowGateEnabled = true;
                 io.writeStatus("chat workflow gate enabled");
-                void hookDispatcher.dispatch({
-                  name: "session.state.changed",
-                  phase: currentPhase,
-                  payload: {
-                    key: "chatWorkflowGateEnabled",
-                    value: true,
-                  },
-                });
+                void appendSessionStateChanged();
                 return;
               }
 
               if (action === "off") {
                 chatWorkflowGateEnabled = false;
                 io.writeStatus("chat workflow gate disabled");
-                void hookDispatcher.dispatch({
-                  name: "session.state.changed",
-                  phase: currentPhase,
-                  payload: {
-                    key: "chatWorkflowGateEnabled",
-                    value: false,
-                  },
-                });
+                void appendSessionStateChanged();
                 return;
               }
 
@@ -458,14 +576,7 @@ export async function runChatLoop({
                 io.writeStatus(
                   `chat workflow gate ${chatWorkflowGateEnabled ? "enabled" : "disabled"}`,
                 );
-                void hookDispatcher.dispatch({
-                  name: "session.state.changed",
-                  phase: currentPhase,
-                  payload: {
-                    key: "chatWorkflowGateEnabled",
-                    value: chatWorkflowGateEnabled,
-                  },
-                });
+                void appendSessionStateChanged();
                 return;
               }
 
@@ -477,11 +588,16 @@ export async function runChatLoop({
             description: "Start a new session",
             callback: () => {
               consumedSlashCommand = true;
-              messages = [{ role: "system", content: config.systemPrompt }];
+              messages = createDefaultMessages(config.systemPrompt);
               lastUsage = null;
               cumulativeUsage = createZeroUsage();
               chatWorkflowGateEnabled = config.chatWorkflowGateEnabled;
               sessionId = randomUUID();
+              sessionPath = createSessionFilePath({
+                workspaceRoot: config.workspaceRoot,
+                sessionId,
+              });
+              resetWorkflowGate(workflowGate);
               io.resetSessionUiState();
               io.updateTokenStatus({
                 model: currentModel,
@@ -497,8 +613,47 @@ export async function runChatLoop({
               });
               void hookDispatcher.dispatch({
                 name: "session.started",
-                payload: { sessionId },
+                payload: {
+                  sessionId,
+                  sessionPath,
+                  state: getSessionStateSnapshot(),
+                  message: messages[0],
+                },
               });
+            },
+          },
+          {
+            name: "resume",
+            description: "Resume a saved session",
+            callback: async (args) => {
+              consumedSlashCommand = true;
+              const selector = args.join(" ").trim() || null;
+              try {
+                const loaded = await loadSavedSession(selector);
+                applyLoadedSession(loaded);
+                await reinitializeHookDispatcher();
+                io.resetSessionUiState();
+                io.updateTokenStatus({
+                  model: currentModel,
+                  baseUrl: currentBaseUrl,
+                  lastUsage,
+                  cumulativeUsage,
+                  tokenLimit: resolveTokenLimit(currentModel),
+                });
+                io.writeStatus(`resumed session ${sessionId}`);
+                await hookDispatcher.dispatch({
+                  name: "session.loaded",
+                  payload: {
+                    sessionId,
+                    sessionPath,
+                    state: getSessionStateSnapshot(),
+                  },
+                });
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                io.writeError(`[error] ${message}`);
+              }
             },
           },
           {
@@ -656,6 +811,7 @@ export async function runChatLoop({
               cumulativeUsage,
               tokenLimit: resolveTokenLimit(currentModel),
             });
+            await appendSessionStateChanged();
           }
 
           if (retriedWithRequired) {

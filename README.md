@@ -12,6 +12,10 @@ bun install
 bun run src/cli/index.ts
 ```
 
+```bash
+bun run src/cli/index.ts resume
+```
+
 ## Build Binary
 
 ```bash
@@ -112,10 +116,23 @@ High-level agent loop:
 - `/help`: Show available commands
 - `/model`: Select and switch model from configured entries
 - `/workflow`: Show or toggle chat workflow gate (`status|on|off|toggle`)
-- `/status`: Show current model and token usage
+- `/status`: Show current session id, session file, model, hooks, and token usage
 - `/new`: Start a new session (full reset)
+- `/resume [session]`: Resume a saved chat session
 - `/exit`: Exit
 - `/quit`: Exit (alias)
+
+## Session Persistence
+
+- Chat mode persists conversation and hook history to `.agents/sessions/*.jsonl`.
+- Each session file is append-only and keeps:
+  - session metadata
+  - session state (`model`, workflow gate, usage)
+  - chat messages, including assistant tool calls and tool results
+  - hook events such as finalize blocks and warnings
+- `resume [session]` starts chat with a saved session loaded.
+- Omitting `[session]` opens the interactive recent-session picker.
+- `/resume` inside chat uses the same selector and picker logic.
 
 ## Agent Config
 

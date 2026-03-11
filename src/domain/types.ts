@@ -37,6 +37,7 @@ export interface TokenStatusSnapshot {
 export interface RuntimeConfig {
   workspaceRoot: string;
   configDirectory: string;
+  configFilePath: string;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -109,6 +110,10 @@ export interface ConsoleIO {
     options?: ReadUserInputOptions,
   ): Promise<ReadUserInputResult>;
   selectModel(models: string[], currentModel: string): Promise<string>;
+  selectSession(
+    sessions: SessionSummary[],
+    currentSessionId: string | null,
+  ): Promise<string>;
   selectSecurityBypass(
     toolName: string,
     errorMessage: string,
@@ -133,3 +138,80 @@ export interface ToolFailure {
   reason: ToolFailureReason;
   message: string;
 }
+
+export interface SessionStateSnapshot {
+  currentModel: string;
+  workflowGateEnabled: boolean;
+  lastUsage: OpenAIUsage | null;
+  cumulativeUsage: OpenAIUsage;
+}
+
+export interface SessionSummary {
+  sessionId: string;
+  path: string;
+  basename: string;
+  updatedAt: string;
+  model: string;
+  firstUserMessagePreview: string;
+}
+
+export interface SessionMeta {
+  schemaVersion: number;
+  sessionId: string;
+  createdAt: string;
+  workspaceRoot: string;
+  configFilePath: string | null;
+  mode: "chat";
+  path: string;
+}
+
+export interface LoadedSession extends SessionMeta {
+  state: SessionStateSnapshot;
+  messages: ChatMessage[];
+  hookEvents: SessionHookEvent[];
+}
+
+export interface SessionMetaEvent {
+  type: "session_meta";
+  timestamp: string;
+  schemaVersion: number;
+  sessionId: string;
+  createdAt: string;
+  workspaceRoot: string;
+  configFilePath: string | null;
+  mode: "chat";
+}
+
+export interface SessionStateEvent {
+  type: "session_state";
+  timestamp: string;
+  state: SessionStateSnapshot;
+}
+
+export interface SessionMessageEvent {
+  type: "message";
+  timestamp: string;
+  message: ChatMessage;
+}
+
+export interface SessionHookEvent {
+  type: "hook_event";
+  timestamp: string;
+  phase: HookPhase | null;
+  hookName: string;
+  resultKind: "warn" | "fail" | "block_finalize";
+  summary: string | null;
+  artifacts: {
+    summary?: string;
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number;
+    metadata?: Record<string, unknown>;
+  } | null;
+}
+
+export type SessionEvent =
+  | SessionMetaEvent
+  | SessionStateEvent
+  | SessionMessageEvent
+  | SessionHookEvent;

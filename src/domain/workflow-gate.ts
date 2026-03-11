@@ -53,6 +53,20 @@ export function activateWorkflowGate(state: WorkflowGateState): void {
   state.activated = true;
 }
 
+export function resetWorkflowGate(
+  state: WorkflowGateState,
+  options: { activated?: boolean } = {},
+): void {
+  state.activated = options.activated ?? false;
+  state.analysisSeen = false;
+  state.todoInitialized = false;
+  state.todoValidated = false;
+  state.remainingTaskIds = [];
+  state.mutationSeen = false;
+  state.verifySeenAfterLastMutation = false;
+  state.analysisReminderSent = false;
+}
+
 export function isInternalTaskTool(toolName: string): boolean {
   return INTERNAL_TASK_TOOL_NAMES.has(toolName);
 }

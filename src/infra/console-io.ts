@@ -84,6 +84,23 @@ export function createConsoleIO(): ConsoleIO {
         })),
       );
     },
+    selectSession(sessions, currentSessionId) {
+      return select(
+        "Resume session",
+        sessions.map((session) => {
+          const preview =
+            session.firstUserMessagePreview.length > 0
+              ? ` | ${session.firstUserMessagePreview}`
+              : "";
+          const currentSuffix =
+            session.sessionId === currentSessionId ? " (current)" : "";
+          return {
+            label: `${session.updatedAt} | ${session.model}${preview}${currentSuffix}`,
+            value: session.path,
+          };
+        }),
+      );
+    },
     async selectSecurityBypass(toolName, errorMessage) {
       const selected = await select(
         `[security] ${toolName} was blocked.\n${errorMessage}\nRetry with SecurityBypass?`,

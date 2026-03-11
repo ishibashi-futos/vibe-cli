@@ -19,6 +19,7 @@ import type {
   TokenStatusSnapshot,
   ToolRuntime,
 } from "../../src/domain/types";
+import { listSessionSummaries, loadSession } from "../../src/session/store";
 
 function usage(total: number): OpenAIUsage {
   return {
@@ -35,6 +36,7 @@ function createTestIO(inputs: ReadonlyArray<string>) {
   const spinnerMessages: string[] = [];
   let resetCount = 0;
   let selectedModel = "alt-model";
+  let selectedSessionPath = "";
   let selectSecurityBypassResult = false;
   let securityPrompts: Array<{ toolName: string; errorMessage: string }> = [];
   let lastModelOptions: string[] = [];
@@ -70,6 +72,9 @@ function createTestIO(inputs: ReadonlyArray<string>) {
       lastModelOptions = [...models];
       lastCurrentModel = currentModel;
       return selectedModel;
+    },
+    async selectSession(sessions) {
+      return selectedSessionPath || sessions[0]?.path || "";
     },
     async selectSecurityBypass(toolName, errorMessage) {
       securityPrompts.push({ toolName, errorMessage });
@@ -110,6 +115,9 @@ function createTestIO(inputs: ReadonlyArray<string>) {
     setSelectSecurityBypassResult: (value: boolean) => {
       selectSecurityBypassResult = value;
     },
+    setSelectedSessionPath: (value: string) => {
+      selectedSessionPath = value;
+    },
     getSecurityPrompts: () => securityPrompts,
     getLastModelOptions: () => lastModelOptions,
     getLastCurrentModel: () => lastCurrentModel,
@@ -122,6 +130,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     workspaceRoot,
     configDirectory: join(workspaceRoot, ".agents"),
+    configFilePath: join(workspaceRoot, ".agents", "vibe-config.json"),
     baseUrl: "http://localhost:1234/v1",
     apiKey: "lmstudio",
     model: "test-model",
@@ -949,13 +958,13 @@ describe("runChatLoop", () => {
     expect(logs.some((line) => line === "done")).toBe(true);
   });
 
-  test("does not persist chat hook events during bun test", async () => {
+  test("persists chat session messages and state to jsonl", async () => {
     const originalCwd = process.cwd();
     const cwd = mkdtempSync(join(tmpdir(), "chat-hook-log-"));
     mkdirSync(join(cwd, ".agents"), { recursive: true });
     process.chdir(cwd);
 
-    const { io } = createTestIO(["hello", "/exit"]);
+    const { io, logs } = createTestIO(["hello", "/status", "/exit"]);
     const completionGateway: CompletionGateway = {
       async request() {
         return {
@@ -986,14 +995,110 @@ describe("runChatLoop", () => {
         config: createConfig({
           workspaceRoot: cwd,
           configDirectory: join(cwd, ".agents"),
+          configFilePath: join(cwd, ".agents", "vibe-config.json"),
         }),
         completionGateway,
         toolRuntime,
         io,
       });
 
-      const logPath = join(cwd, ".agents", "sessions", "current.jsonl");
-      expect(existsSync(logPath)).toBe(false);
+      const sessions = listSessionSummaries(cwd);
+      expect(sessions).toHaveLength(1);
+      const loaded = loadSession(sessions[0]?.path ?? "");
+      expect(loaded.messages.some((message) => message.role === "user")).toBe(
+        true,
+      );
+      expect(
+        loaded.messages.some((message) => message.role === "assistant"),
+      ).toBe(true);
+      expect(loaded.state.currentModel).toBe("test-model");
+      expect(logs.some((line) => line.startsWith("session_id="))).toBe(true);
+      expect(logs.some((line) => line.startsWith("session_file="))).toBe(true);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("resumes saved session and continues appending to the same file", async () => {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "chat-resume-"));
+    mkdirSync(join(cwd, ".agents"), { recursive: true });
+    process.chdir(cwd);
+
+    const firstIo = createTestIO(["hello", "/exit"]);
+    const firstGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: {
+            role: "assistant",
+            content: "first answer",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+    const secondIo = createTestIO(["hello again", "/exit"]);
+    const secondGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: {
+            role: "assistant",
+            content: "second answer",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(6),
+        };
+      },
+    };
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    try {
+      const config = createConfig({
+        workspaceRoot: cwd,
+        configDirectory: join(cwd, ".agents"),
+        configFilePath: join(cwd, ".agents", "vibe-config.json"),
+      });
+      await runChatLoop({
+        config,
+        completionGateway: firstGateway,
+        toolRuntime,
+        io: firstIo.io,
+      });
+
+      const sessions = listSessionSummaries(cwd);
+      expect(sessions).toHaveLength(1);
+
+      await runChatLoop({
+        config,
+        completionGateway: secondGateway,
+        toolRuntime,
+        io: secondIo.io,
+        resumeSelector: sessions[0]?.path ?? null,
+      });
+
+      const loaded = loadSession(sessions[0]?.path ?? "");
+      expect(
+        loaded.messages.filter((message) => message.role === "user").length,
+      ).toBe(2);
+      expect(
+        loaded.messages.filter((message) => message.role === "assistant")
+          .length,
+      ).toBe(2);
+      expect(loaded.state.cumulativeUsage.total_tokens).toBe(10);
     } finally {
       process.chdir(originalCwd);
       rmSync(cwd, { recursive: true, force: true });

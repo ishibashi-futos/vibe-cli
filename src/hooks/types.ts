@@ -59,6 +59,7 @@ export interface HookContext {
   mode: HookMode;
   workflowGate: WorkflowGateState;
   sessionId: string | null;
+  sessionPath: string | null;
 }
 
 export interface HookModule {
@@ -66,6 +67,15 @@ export interface HookModule {
     event: HookEvent,
     context: HookContext,
   ): Promise<HookResult | void> | HookResult | void;
+  recordHookResult?(
+    params: {
+      event: HookEvent;
+      hookName: string;
+      source: "built-in" | "public";
+      result: HookResult;
+    },
+    context: HookContext,
+  ): Promise<void> | void;
   dispose?(): Promise<void> | void;
 }
 

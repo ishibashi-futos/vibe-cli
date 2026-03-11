@@ -72,6 +72,7 @@ describe("hook dispatcher", () => {
           mode: "exec",
           workflowGate,
           getSessionId: () => null,
+          getSessionPath: () => null,
           logger: {
             writeStatus(message) {
               logs.push(message);
@@ -131,6 +132,7 @@ describe("hook dispatcher", () => {
             mode: "exec",
             workflowGate,
             getSessionId: () => null,
+            getSessionPath: () => null,
             logger: {
               writeStatus() {},
               writeError() {},

@@ -6,6 +6,7 @@ import type {
 } from "../domain/types";
 import {
   loadVibeConfigFile,
+  resolveVibeConfigPath,
   resolveConfigRelativeFileCandidates,
   resolveInstructionCandidates,
 } from "./vibe-config";
@@ -363,6 +364,7 @@ export function loadAppConfig(
   return {
     workspaceRoot: cwd,
     configDirectory: loaded.configDirectory,
+    configFilePath: resolveVibeConfigPath(cwd, options.configFilePath ?? null),
     baseUrl: DEFAULT_BASE_URL,
     apiKey: DEFAULT_API_KEY,
     model,

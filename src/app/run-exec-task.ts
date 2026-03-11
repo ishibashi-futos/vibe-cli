@@ -143,6 +143,7 @@ export async function runExecTask({
     mode: "exec",
     workflowGate,
     getSessionId: () => null,
+    getSessionPath: () => null,
     logger: io,
   });
 

@@ -72,12 +72,13 @@ try {
 }
 const completionGateway = createOpenAICompletionGateway();
 
-if (parsed.mode === "chat") {
+if (parsed.mode === "chat" || parsed.mode === "resume") {
   await runChatLoop({
     config,
     completionGateway,
     toolRuntime,
     io,
+    resumeSelector: parsed.mode === "resume" ? parsed.sessionSelector : null,
     onExit: () => {
       process.exit(0);
     },

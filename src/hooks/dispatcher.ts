@@ -49,6 +49,7 @@ export async function createHookDispatcher(params: {
   mode: HookMode;
   workflowGate: HookContext["workflowGate"];
   getSessionId: () => string | null;
+  getSessionPath: () => string | null;
   logger: HookLogger;
 }): Promise<HookDispatcher> {
   const initContext: HookInitContext = {
@@ -99,6 +100,7 @@ export async function createHookDispatcher(params: {
         mode: params.mode,
         workflowGate: params.workflowGate,
         sessionId: params.getSessionId(),
+        sessionPath: params.getSessionPath(),
       };
       const results: HookDispatchResult[] = [];
 
@@ -116,6 +118,17 @@ export async function createHookDispatcher(params: {
             source: hook.source,
             result,
           });
+          for (const recorder of registeredHooks) {
+            await recorder.module.recordHookResult?.(
+              {
+                event,
+                hookName: hook.hookName,
+                source: hook.source,
+                result,
+              },
+              context,
+            );
+          }
 
           if (result.kind === "warn" && result.artifacts?.summary) {
             params.logger.writeStatus(
