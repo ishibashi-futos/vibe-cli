@@ -15,15 +15,11 @@ import type {
   ChatMessage,
   CompletionGateway,
   ConsoleIO,
+  HookPhase,
   OpenAIUsage,
   RuntimeConfig,
   ToolRuntime,
 } from "../domain/types";
-import {
-  getAssistantContent,
-  getToolCalls,
-  requestAssistantMessage,
-} from "./chat-orchestrator";
 import {
   createWorkflowGate,
   recordWorkflowToolSuccess,
@@ -31,7 +27,11 @@ import {
 } from "../domain/workflow-gate";
 import { buildHookContinuationMessage } from "../hooks/continuation-message";
 import { createHookDispatcher } from "../hooks/dispatcher";
-import type { HookPhase } from "../domain/types";
+import {
+  getAssistantContent,
+  getToolCalls,
+  requestAssistantMessage,
+} from "./chat-orchestrator";
 
 const EXEC_DONE_TOKEN = "<EXEC_DONE />";
 const EXEC_SUMMARY_START = "<EXEC_SUMMARY>";

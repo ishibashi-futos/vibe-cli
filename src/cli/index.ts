@@ -1,7 +1,6 @@
 import { runChatLoop } from "../app/run-chat-loop";
 import { runExecTask } from "../app/run-exec-task";
-import { parseCliArgs } from "./argv";
-import { loadAppConfig, type AppConfig } from "../config/runtime-config";
+import { type AppConfig, loadAppConfig } from "../config/runtime-config";
 import {
   initializeVibeConfig,
   resolveVibeConfigPath,
@@ -13,6 +12,7 @@ import {
 import { createConsoleIO } from "../infra/console-io";
 import { createOpenAICompletionGateway } from "../infra/openai-client";
 import { createDefaultToolRuntime } from "../infra/tool-runtime";
+import { parseCliArgs } from "./argv";
 
 async function readInstructionFromStdin(): Promise<string> {
   if (process.stdin.isTTY) {

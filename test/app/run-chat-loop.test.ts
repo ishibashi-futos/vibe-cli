@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  mkdtempSync,
-  mkdirSync,
   existsSync,
+  mkdirSync,
+  mkdtempSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -40,7 +40,7 @@ function createTestIO(inputs: ReadonlyArray<string>) {
   let selectedModel = "alt-model";
   let selectedSessionPath = "";
   let selectSecurityBypassResult = false;
-  let securityPrompts: Array<{ toolName: string; errorMessage: string }> = [];
+  const securityPrompts: Array<{ toolName: string; errorMessage: string }> = [];
   let lastModelOptions: string[] = [];
   let lastCurrentModel = "";
 

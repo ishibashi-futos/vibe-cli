@@ -10,14 +10,15 @@ import {
   buildSecurityBypassDeclinedMessage,
   buildToolFailure,
   buildToolUnavailableMessage,
-  isToolAvailable,
   isSecurityRestrictedInvokeError,
+  isToolAvailable,
   parseToolArgs,
 } from "../domain/tool-call";
 import type {
   ChatMessage,
   CompletionGateway,
   ConsoleIO,
+  HookPhase,
   LoadedSession,
   OpenAIUsage,
   RuntimeConfig,
@@ -26,11 +27,6 @@ import type {
   SlashCommand,
   ToolRuntime,
 } from "../domain/types";
-import {
-  getAssistantContent,
-  getToolCalls,
-  requestAssistantMessage,
-} from "./chat-orchestrator";
 import {
   activateWorkflowGate,
   buildWorkflowFinalContinuationMessage,
@@ -41,13 +37,17 @@ import {
 } from "../domain/workflow-gate";
 import { buildHookContinuationMessage } from "../hooks/continuation-message";
 import { createHookDispatcher, type HookDispatcher } from "../hooks/dispatcher";
-import type { HookPhase } from "../domain/types";
 import {
   createSessionFilePath,
   listSessionSummaries,
   loadSession,
   resolveSessionSelector,
 } from "../session/store";
+import {
+  getAssistantContent,
+  getToolCalls,
+  requestAssistantMessage,
+} from "./chat-orchestrator";
 
 interface RunChatLoopDeps {
   config: RuntimeConfig;

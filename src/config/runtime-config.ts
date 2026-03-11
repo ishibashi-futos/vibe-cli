@@ -6,9 +6,9 @@ import type {
 } from "../domain/types";
 import {
   loadVibeConfigFile,
-  resolveVibeConfigPath,
   resolveConfigRelativeFileCandidates,
   resolveInstructionCandidates,
+  resolveVibeConfigPath,
 } from "./vibe-config";
 
 const DEFAULT_BASE_URL = "http://localhost:1234/v1";

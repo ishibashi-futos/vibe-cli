@@ -1,4 +1,6 @@
 import type { RuntimeConfig } from "../domain/types";
+import { loadPublicHooks } from "./public-hook-loader";
+import { createSessionPersistenceHook } from "./session-persistence";
 import type {
   HookContext,
   HookDispatchResult,
@@ -8,8 +10,6 @@ import type {
   HookResult,
   RegisteredHook,
 } from "./types";
-import { loadPublicHooks } from "./public-hook-loader";
-import { createSessionPersistenceHook } from "./session-persistence";
 import { createWorkflowPhaseGateHook } from "./workflow-phase-gate";
 
 function shouldHandlePhase(

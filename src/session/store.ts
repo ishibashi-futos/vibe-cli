@@ -10,13 +10,13 @@ import {
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type {
   ChatMessage,
+  LoadedSession,
   OpenAIUsage,
   SessionEvent,
   SessionHookEvent,
   SessionMeta,
   SessionStateSnapshot,
   SessionSummary,
-  LoadedSession,
 } from "../domain/types";
 
 const SESSION_SCHEMA_VERSION = 1;

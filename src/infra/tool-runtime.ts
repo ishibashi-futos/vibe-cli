@@ -1,13 +1,13 @@
+import { basename } from "node:path";
 import {
-  SecurityBypass,
   createAgentToolkit,
   createToolContext,
-  type ToolPolicy,
   type FileAccessMode,
+  SecurityBypass,
+  type ToolPolicy,
 } from "agent-tools-ts";
-import { basename } from "node:path";
-import type { ToolRuntime } from "../domain/types";
 import { loadVibeConfigFile } from "../config/vibe-config";
+import type { ToolRuntime } from "../domain/types";
 
 const DEFAULT_WRITE_SCOPE: FileAccessMode = "workspace-write";
 const INTERNAL_TASK_TOOL_NAMES = [
