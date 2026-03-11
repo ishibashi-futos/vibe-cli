@@ -11,6 +11,25 @@ import type {
   HookResult,
 } from "./types";
 
+const SESSION_PERSISTENCE_ENV = "VIBE_CLI_ENABLE_SESSION_PERSISTENCE";
+
+function isTestRuntime(): boolean {
+  if (process.env.NODE_ENV === "test") {
+    return true;
+  }
+
+  const bunArgv = globalThis.Bun?.argv;
+  return Array.isArray(bunArgv) && bunArgv[1] === "test";
+}
+
+function isSessionPersistenceEnabledInCurrentRuntime(): boolean {
+  if (!isTestRuntime()) {
+    return true;
+  }
+
+  return process.env[SESSION_PERSISTENCE_ENV] === "1";
+}
+
 function isChatMessage(value: unknown): value is ChatMessage {
   return typeof value === "object" && value !== null && "role" in value;
 }
@@ -95,6 +114,10 @@ export function createSessionPersistenceHook(
         return { kind: "continue" };
       }
 
+      if (!isSessionPersistenceEnabledInCurrentRuntime()) {
+        return { kind: "continue" };
+      }
+
       if (event.name === "session.started") {
         const payload = event.payload ?? {};
         const sessionPath = readSessionPath(payload);
@@ -164,6 +187,7 @@ export function createSessionPersistenceHook(
     recordHookResult(params, context) {
       if (
         context.mode !== "chat" ||
+        !isSessionPersistenceEnabledInCurrentRuntime() ||
         !context.sessionPath ||
         params.result.kind === "continue" ||
         params.hookName === "session-persistence"

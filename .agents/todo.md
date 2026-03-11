@@ -7,7 +7,7 @@
 - [ ] バイナリ配布(ビルドスクリプト `bun build` の作成とCIへの組み込み)
 - [x] Configurationの実装 `~/.config/vibe-cli/config.json` とModel切り替えの実装(`/model`)
 - [x] `/model` でモデルの切り替え
-- [ ] `history` / agent / tool call の永続化 / resume
+- [x] `history` / agent / tool call の永続化 / resume
 - [ ] `/exit` `/quit` の統合
 - [ ] `/quit` 時、使用トークン数・API呼び出し回数を表示して終了する
 - [ ] Status bar の表示内容見直し: 知りたいのは token usage rate のみなので、使用量・Max Tokenは表示しない。lastは残す。
@@ -16,7 +16,7 @@
 - [x] `init` サブコマンド により、`.agents/vibe-config.json` 等、設定ファイルの初期化を行う
 - [x] `terminal-ui-kit`のstatus/log/error output APIに対応する
 - [x] `bypassPermissions` に対応して、制約で止められた場合に一時的なバイパスができるようにする。
-- [ ] `ToDo` 管理ツールができたら、ユーザー要求 > コードベース分析(grep / ast_grep / tree / git_statusを用いてコードベースから要求事項の把握)> ToDo作成 > 実行 > VERIRYのループを組み込む
+- [x] `ToDo` 管理ツールができたら、ユーザー要求 > コードベース分析(grep / ast_grep / tree / git_statusを用いてコードベースから要求事項の把握)> ToDo作成 > 実行 > VERIRYのループを組み込む
 - [x] `hooks` 機能の追加
 - [ ] `~/.config/vibe-cli/vibe-config.json` の有効化と、カレントディレクトリ設定とのマージ
 - [ ] `/btw` by the way (aliased `/fork`) による会話の分岐

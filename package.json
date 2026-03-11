@@ -6,7 +6,7 @@
   "scripts": {
     "chat": "bun run --watch src/cli/index.ts",
     "build:binary": "bun run scripts/build-binary.ts",
-    "format": "biome format --write .",
+    "format": "biome format --write src test scripts README.md package.json biome.json",
     "typecheck": "tsc --noEmit ",
     "sanity": "bun run format && bun run typecheck && bun test",
     "config:init": "bun run src/cli/index.ts -- init"

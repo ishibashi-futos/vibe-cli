@@ -21,6 +21,8 @@ import type {
 } from "../../src/domain/types";
 import { listSessionSummaries, loadSession } from "../../src/session/store";
 
+const SESSION_PERSISTENCE_ENV = "VIBE_CLI_ENABLE_SESSION_PERSISTENCE";
+
 function usage(total: number): OpenAIUsage {
   return {
     prompt_tokens: Math.floor(total / 2),
@@ -990,6 +992,9 @@ describe("runChatLoop", () => {
       },
     };
 
+    const originalEnv = process.env[SESSION_PERSISTENCE_ENV];
+    process.env[SESSION_PERSISTENCE_ENV] = "1";
+
     try {
       await runChatLoop({
         config: createConfig({
@@ -1014,6 +1019,62 @@ describe("runChatLoop", () => {
       expect(loaded.state.currentModel).toBe("test-model");
       expect(logs.some((line) => line.startsWith("session_id="))).toBe(true);
       expect(logs.some((line) => line.startsWith("session_file="))).toBe(true);
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env[SESSION_PERSISTENCE_ENV];
+      } else {
+        process.env[SESSION_PERSISTENCE_ENV] = originalEnv;
+      }
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("does not persist session files during bun test by default", async () => {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "chat-no-session-files-"));
+    mkdirSync(join(cwd, ".agents"), { recursive: true });
+    process.chdir(cwd);
+
+    const { io } = createTestIO(["hello", "/exit"]);
+    const completionGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: {
+            role: "assistant",
+            content: "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    try {
+      await runChatLoop({
+        config: createConfig({
+          workspaceRoot: cwd,
+          configDirectory: join(cwd, ".agents"),
+          configFilePath: join(cwd, ".agents", "vibe-config.json"),
+        }),
+        completionGateway,
+        toolRuntime,
+        io,
+      });
+
+      expect(listSessionSummaries(cwd)).toHaveLength(0);
     } finally {
       process.chdir(originalCwd);
       rmSync(cwd, { recursive: true, force: true });
@@ -1066,6 +1127,9 @@ describe("runChatLoop", () => {
       },
     };
 
+    const originalEnv = process.env[SESSION_PERSISTENCE_ENV];
+    process.env[SESSION_PERSISTENCE_ENV] = "1";
+
     try {
       const config = createConfig({
         workspaceRoot: cwd,
@@ -1100,6 +1164,11 @@ describe("runChatLoop", () => {
       ).toBe(2);
       expect(loaded.state.cumulativeUsage.total_tokens).toBe(10);
     } finally {
+      if (originalEnv === undefined) {
+        delete process.env[SESSION_PERSISTENCE_ENV];
+      } else {
+        process.env[SESSION_PERSISTENCE_ENV] = originalEnv;
+      }
       process.chdir(originalCwd);
       rmSync(cwd, { recursive: true, force: true });
     }
