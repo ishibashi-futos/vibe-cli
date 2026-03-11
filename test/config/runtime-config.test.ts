@@ -44,6 +44,8 @@ describe("runtime-config", () => {
       () => {
         const config = loadAppConfig("default-system");
 
+        expect(config.workspaceRoot).toBe(process.cwd());
+        expect(config.configDirectory).toBe(join(process.cwd(), ".agents"));
         expect(config.baseUrl).toBe("http://localhost:1234/v1");
         expect(config.apiKey).toBe("lmstudio");
         expect(config.model).toBe("qwen2.5-coder-7b-instruct-mlx");
@@ -54,6 +56,7 @@ describe("runtime-config", () => {
         expect(config.enforceToolCallFirstRound).toBe(true);
         expect(config.mentionMaxLines).toBe(100);
         expect(config.chatWorkflowGateEnabled).toBe(true);
+        expect(config.hooks).toEqual([]);
         expect(config.modelTokenLimit).toBe(32768);
         expect(config.modelContextLengths).toEqual({
           "qwen2.5-coder-7b-instruct-mlx": 32768,
@@ -97,6 +100,8 @@ describe("runtime-config", () => {
       () => {
         const config = loadAppConfig("default-system");
 
+        expect(config.workspaceRoot).toBe(process.cwd());
+        expect(config.configDirectory).toBe(join(process.cwd(), ".agents"));
         expect(config.baseUrl).toBe("http://localhost:1234/v1");
         expect(config.apiKey).toBe("lmstudio");
         expect(config.model).toBe("gpt-x");
@@ -107,6 +112,7 @@ describe("runtime-config", () => {
         expect(config.maxPreviewChars).toBe(2048);
         expect(config.mentionMaxLines).toBe(42);
         expect(config.chatWorkflowGateEnabled).toBe(false);
+        expect(config.hooks).toEqual([]);
         expect(config.modelTokenLimit).toBe(100000);
         expect(config.modelBaseUrls["gpt-x"]).toBe("http://127.0.0.1:9999/v1");
         expect(config.modelApiKeys["gpt-x"]).toBe("gpt-x-key");
@@ -178,12 +184,57 @@ describe("runtime-config", () => {
   test("falls back safely when .agents/vibe-config.json is missing", () => {
     withTestCwd(null, {}, () => {
       const config = loadAppConfig("default-system");
+      expect(config.workspaceRoot).toBe(process.cwd());
+      expect(config.configDirectory).toBe(join(process.cwd(), ".agents"));
       expect(config.modelContextLengths).toEqual({});
       expect(config.modelBaseUrls).toEqual({});
       expect(config.modelApiKeys).toEqual({});
       expect(config.modelTokenLimit).toBeNull();
       expect(config.agentInstructionPath).toBeNull();
+      expect(config.hooks).toEqual([]);
     });
+  });
+
+  test("loads hooks in declaration order", () => {
+    withTestCwd(
+      JSON.stringify({
+        models: {},
+        hooks: {
+          sanity: {
+            on_error: "abort",
+            phases: {
+              done: true,
+            },
+            config: {
+              command: ["bun", "run", "sanity"],
+            },
+          },
+          notify: {
+            on_error: "warn",
+          },
+        },
+      }),
+      {},
+      () => {
+        const config = loadAppConfig("default-system");
+        expect(config.hooks).toEqual([
+          {
+            hookName: "sanity",
+            onError: "abort",
+            phases: { done: true },
+            config: {
+              command: ["bun", "run", "sanity"],
+            },
+          },
+          {
+            hookName: "notify",
+            onError: "warn",
+            phases: null,
+            config: {},
+          },
+        ]);
+      },
+    );
   });
 
   test("appends AGENTS.md content to default system prompt", () => {

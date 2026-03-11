@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runExecTask } from "../../src/app/run-exec-task";
 import type {
   CompletionGateway,
@@ -18,7 +21,10 @@ function usage(total: number): OpenAIUsage {
 }
 
 function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
+  const workspaceRoot = process.cwd();
   return {
+    workspaceRoot,
+    configDirectory: join(workspaceRoot, ".agents"),
     baseUrl: "http://localhost:1234/v1",
     apiKey: "lmstudio",
     model: "test-model",
@@ -33,6 +39,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     mentionMaxLines: 100,
     modelTokenLimit: 1000,
     chatWorkflowGateEnabled: true,
+    hooks: [],
     ...overrides,
   };
 }
@@ -492,8 +499,10 @@ describe("runExecTask", () => {
     expect(result).toEqual({ success: true, exitCode: 0 });
     expect(callCount).toBe(3);
     expect(
-      logs.some((line) =>
-        line.includes("workflow gate blocked final response"),
+      logs.some(
+        (line) =>
+          line.includes("hook gate blocked verify phase") ||
+          line.includes("hook gate blocked final response"),
       ),
     ).toBe(true);
   });
@@ -569,5 +578,128 @@ describe("runExecTask", () => {
     expect(
       logs.some((line) => line.includes("workflow gate for apply_patch")),
     ).toBe(true);
+  });
+
+  test("retries when a done hook blocks finalization", async () => {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "exec-hook-block-"));
+    mkdirSync(join(cwd, ".agents", "hooks", "blocker"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".agents", "hooks", "blocker", "index.ts"),
+      `
+        let seen = false;
+        export default {
+          handle(event) {
+            if (event.name !== "phase.check" || event.phase !== "done") {
+              return { kind: "continue" };
+            }
+            if (!seen) {
+              seen = true;
+              return {
+                kind: "block_finalize",
+                artifacts: {
+                  summary: "run sanity failed",
+                },
+              };
+            }
+            return { kind: "continue" };
+          },
+        };
+      `,
+      "utf8",
+    );
+    process.chdir(cwd);
+
+    const logs: string[] = [];
+    let callCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        callCount += 1;
+        return {
+          message: {
+            role: "assistant",
+            content:
+              callCount <= 2
+                ? ""
+                : "<EXEC_SUMMARY>final result</EXEC_SUMMARY><EXEC_DONE />",
+            tool_calls:
+              callCount === 1
+                ? [
+                    {
+                      id: "call_1",
+                      type: "function",
+                      function: {
+                        name: "task_create_many",
+                        arguments: '{"tasks":[{"title":"setup"}]}',
+                      },
+                    },
+                    {
+                      id: "call_2",
+                      type: "function",
+                      function: {
+                        name: "task_validate_completion",
+                        arguments: "{}",
+                      },
+                    },
+                  ]
+                : [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["task_create_many", "task_validate_completion"];
+      },
+      async invoke(toolName) {
+        if (toolName === "task_create_many") {
+          return { status: "success", data: { tasks: [] } };
+        }
+        if (toolName === "task_validate_completion") {
+          return { status: "success", data: { ok: true, remaining: [] } };
+        }
+        throw new Error("not expected");
+      },
+    };
+
+    try {
+      const result = await runExecTask({
+        instruction: "hello",
+        config: createConfig({
+          workspaceRoot: cwd,
+          configDirectory: join(cwd, ".agents"),
+          hooks: [
+            {
+              hookName: "blocker",
+              onError: "warn",
+              phases: { done: true },
+              config: {},
+            },
+          ],
+          maxToolRounds: 3,
+        }),
+        completionGateway,
+        toolRuntime,
+        io: createTestIO(logs),
+      });
+
+      expect(result).toEqual({ success: true, exitCode: 0 });
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(callCount).toBe(3);
+    expect(
+      logs.some((line) =>
+        line.includes("[exec] hook gate blocked final response"),
+      ),
+    ).toBe(true);
+    expect(logs).toContain("final result");
   });
 });

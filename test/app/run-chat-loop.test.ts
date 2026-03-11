@@ -1,4 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import {
+  mkdtempSync,
+  mkdirSync,
+  existsSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { runChatLoop } from "../../src/app/run-chat-loop";
 import type {
   ChatMessage,
@@ -109,7 +118,10 @@ function createTestIO(inputs: ReadonlyArray<string>) {
 }
 
 function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
+  const workspaceRoot = process.cwd();
   return {
+    workspaceRoot,
+    configDirectory: join(workspaceRoot, ".agents"),
     baseUrl: "http://localhost:1234/v1",
     apiKey: "lmstudio",
     model: "test-model",
@@ -133,6 +145,7 @@ function createConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
     mentionMaxLines: 100,
     modelTokenLimit: 1000,
     chatWorkflowGateEnabled: true,
+    hooks: [],
     ...overrides,
   };
 }
@@ -769,8 +782,10 @@ describe("runChatLoop", () => {
     });
 
     expect(
-      logs.some((line) =>
-        line.includes("workflow gate blocked final response"),
+      logs.some(
+        (line) =>
+          line.includes("hook gate blocked verify phase") ||
+          line.includes("hook gate blocked final response"),
       ),
     ).toBe(true);
     expect(logs.some((line) => line === "done")).toBe(false);
@@ -843,5 +858,145 @@ describe("runChatLoop", () => {
     expect(
       logs.some((line) => line.includes("workflow gate for apply_patch")),
     ).toBe(true);
+  });
+
+  test("retries when a done hook blocks finalization", async () => {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "chat-hook-block-"));
+    mkdirSync(join(cwd, ".agents", "hooks", "blocker"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".agents", "hooks", "blocker", "index.ts"),
+      `
+        let seen = false;
+        export default {
+          handle(event) {
+            if (event.name !== "phase.check" || event.phase !== "done") {
+              return { kind: "continue" };
+            }
+            if (!seen) {
+              seen = true;
+              return {
+                kind: "block_finalize",
+                artifacts: {
+                  summary: "first done check failed",
+                  stderr: "sanity failed",
+                },
+              };
+            }
+            return { kind: "continue" };
+          },
+        };
+      `,
+      "utf8",
+    );
+    process.chdir(cwd);
+
+    const { io, logs } = createTestIO(["hello", "/exit"]);
+    let callCount = 0;
+    const completionGateway: CompletionGateway = {
+      async request() {
+        callCount += 1;
+        return {
+          message: {
+            role: "assistant",
+            content: callCount === 1 ? "first try" : "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(5),
+        };
+      },
+    };
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    try {
+      await runChatLoop({
+        config: createConfig({
+          workspaceRoot: cwd,
+          configDirectory: join(cwd, ".agents"),
+          hooks: [
+            {
+              hookName: "blocker",
+              onError: "warn",
+              phases: { done: true },
+              config: {},
+            },
+          ],
+        }),
+        completionGateway,
+        toolRuntime,
+        io,
+      });
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
+
+    expect(callCount).toBe(2);
+    expect(
+      logs.some((line) => line.includes("hook gate blocked final response")),
+    ).toBe(true);
+    expect(logs.some((line) => line === "done")).toBe(true);
+  });
+
+  test("does not persist chat hook events during bun test", async () => {
+    const originalCwd = process.cwd();
+    const cwd = mkdtempSync(join(tmpdir(), "chat-hook-log-"));
+    mkdirSync(join(cwd, ".agents"), { recursive: true });
+    process.chdir(cwd);
+
+    const { io } = createTestIO(["hello", "/exit"]);
+    const completionGateway: CompletionGateway = {
+      async request() {
+        return {
+          message: {
+            role: "assistant",
+            content: "done",
+            tool_calls: [],
+            refusal: null,
+          },
+          usage: usage(4),
+        };
+      },
+    };
+    const toolRuntime: ToolRuntime = {
+      getAllowedTools() {
+        return [];
+      },
+      getAllowedToolNames() {
+        return ["read_file"];
+      },
+      async invoke() {
+        throw new Error("not expected");
+      },
+    };
+
+    try {
+      await runChatLoop({
+        config: createConfig({
+          workspaceRoot: cwd,
+          configDirectory: join(cwd, ".agents"),
+        }),
+        completionGateway,
+        toolRuntime,
+        io,
+      });
+
+      const logPath = join(cwd, ".agents", "sessions", "current.jsonl");
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

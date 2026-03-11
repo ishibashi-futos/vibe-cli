@@ -35,6 +35,8 @@ export interface TokenStatusSnapshot {
 }
 
 export interface RuntimeConfig {
+  workspaceRoot: string;
+  configDirectory: string;
   baseUrl: string;
   apiKey: string;
   model: string;
@@ -49,6 +51,23 @@ export interface RuntimeConfig {
   modelTokenLimit: number | null;
   mentionMaxLines: number;
   chatWorkflowGateEnabled: boolean;
+  hooks: HookConfigEntry[];
+}
+
+export type HookPhase = "analyze" | "execute" | "verify" | "done";
+
+export interface HookPhaseFilter {
+  analyze?: boolean;
+  execute?: boolean;
+  verify?: boolean;
+  done?: boolean;
+}
+
+export interface HookConfigEntry {
+  hookName: string;
+  onError: "warn" | "abort";
+  phases: HookPhaseFilter | null;
+  config: Record<string, unknown>;
 }
 
 export interface CompletionGateway {

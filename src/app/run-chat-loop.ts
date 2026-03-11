@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   withAssistantFinalMessage,
   withAssistantToolCalls,
@@ -34,6 +35,9 @@ import {
   recordWorkflowToolSuccess,
   shouldBlockToolExecution,
 } from "../domain/workflow-gate";
+import { buildHookContinuationMessage } from "../hooks/continuation-message";
+import { createHookDispatcher } from "../hooks/dispatcher";
+import type { HookPhase } from "../domain/types";
 
 interface RunChatLoopDeps {
   config: RuntimeConfig;
@@ -198,6 +202,19 @@ export async function runChatLoop({
   const tools = toolRuntime.getAllowedTools();
   const availableToolNames = toolRuntime.getAllowedToolNames();
   const availableToolSet = new Set(availableToolNames);
+  const workflowGate = createWorkflowGate({
+    activated: false,
+    availableToolNames,
+  });
+  let sessionId = randomUUID();
+  let currentPhase: HookPhase | undefined;
+  const hookDispatcher = await createHookDispatcher({
+    config,
+    mode: "chat",
+    workflowGate,
+    getSessionId: () => sessionId,
+    logger: io,
+  });
 
   let messages: ChatMessage[] = [
     { role: "system", content: config.systemPrompt },
@@ -239,466 +256,695 @@ export async function runChatLoop({
     "Submit with Cmd+Enter (macOS) or Ctrl+Enter (Windows/Linux).",
   );
 
-  while (true) {
-    let consumedSlashCommand = false;
-    let shouldExit = false;
-    const inputResult = await io.readUserInput("> ", {
-      commands: [
-        {
-          name: "help",
-          description: "Show slash command help",
-          callback: () => {
-            consumedSlashCommand = true;
-            for (const line of HELP_LINES) {
-              io.writeStatus(line);
-            }
-          },
-        },
-        {
-          name: "status",
-          description: "Show current session status",
-          callback: () => {
-            consumedSlashCommand = true;
-            const statusLines = formatStatus({
-              model: currentModel,
-              baseUrl: currentBaseUrl,
-              agentInstructionPath: config.agentInstructionPath,
-              configuredModelCount: configuredModelNames.length,
-              messageCount: messages.length,
-              lastUsage,
-              cumulativeUsage,
-              tokenLimit: resolveTokenLimit(currentModel),
-              workflowGateEnabled: chatWorkflowGateEnabled,
-              toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
-            });
-            for (const line of statusLines) {
-              io.writeStatus(line);
-            }
-          },
-        },
-        {
-          name: "model",
-          description: "Show/change current model",
-          callback: async () => {
-            consumedSlashCommand = true;
-            if (configuredModelNames.length === 0) {
-              io.writeError(
-                "[error] no models found in .agents/vibe-config.json",
-              );
-              return;
-            }
-
-            const selectableModels = [
-              currentModel,
-              ...configuredModelNames
-                .filter((modelName) => modelName !== currentModel)
-                .sort(),
-            ];
-            const requested = await io.selectModel(
-              selectableModels,
-              currentModel,
-            );
-
-            currentModel = requested;
-            currentBaseUrl = resolveBaseUrl(currentModel);
-            currentApiKey = resolveApiKey(currentModel);
-            lastUsage = null;
-            cumulativeUsage = createZeroUsage();
-            io.updateTokenStatus({
-              model: currentModel,
-              baseUrl: currentBaseUrl,
-              lastUsage,
-              cumulativeUsage,
-              tokenLimit: resolveTokenLimit(currentModel),
-            });
-            io.writeStatus(
-              `switched model to ${currentModel} (base_url=${currentBaseUrl})`,
-            );
-          },
-        },
-        {
-          name: "workflow",
-          description: "Show/change chat workflow gate",
-          callback: (args) => {
-            consumedSlashCommand = true;
-            const action = args[0]?.toLowerCase() ?? "status";
-
-            if (action === "status") {
-              io.writeStatus(
-                `chat workflow gate is ${chatWorkflowGateEnabled ? "on" : "off"}`,
-              );
-              return;
-            }
-
-            if (action === "on") {
-              chatWorkflowGateEnabled = true;
-              io.writeStatus("chat workflow gate enabled");
-              return;
-            }
-
-            if (action === "off") {
-              chatWorkflowGateEnabled = false;
-              io.writeStatus("chat workflow gate disabled");
-              return;
-            }
-
-            if (action === "toggle") {
-              chatWorkflowGateEnabled = !chatWorkflowGateEnabled;
-              io.writeStatus(
-                `chat workflow gate ${chatWorkflowGateEnabled ? "enabled" : "disabled"}`,
-              );
-              return;
-            }
-
-            io.writeError("[error] usage: /workflow [status|on|off|toggle]");
-          },
-        },
-        {
-          name: "new",
-          description: "Start a new session",
-          callback: () => {
-            consumedSlashCommand = true;
-            messages = [{ role: "system", content: config.systemPrompt }];
-            lastUsage = null;
-            cumulativeUsage = createZeroUsage();
-            chatWorkflowGateEnabled = config.chatWorkflowGateEnabled;
-            io.resetSessionUiState();
-            io.updateTokenStatus({
-              model: currentModel,
-              baseUrl: currentBaseUrl,
-              lastUsage,
-              cumulativeUsage,
-              tokenLimit: resolveTokenLimit(currentModel),
-            });
-            io.writeStatus("started a new session");
-          },
-        },
-        {
-          name: "exit",
-          description: "Exit the app",
-          callback: () => {
-            consumedSlashCommand = true;
-            shouldExit = true;
-            io.writeStatus("See you again!");
-          },
-        },
-        {
-          name: "quit",
-          description: "Exit the app (alias)",
-          callback: () => {
-            consumedSlashCommand = true;
-            shouldExit = true;
-            io.writeStatus("See you again!");
-          },
-        },
-      ] satisfies SlashCommand[],
+  const enterPhase = async (
+    phase: HookPhase,
+    payload?: Record<string, unknown>,
+  ) => {
+    currentPhase = phase;
+    await hookDispatcher.dispatch({
+      name: "phase.entered",
+      phase,
+      payload,
     });
-    const userInput = inputResult.value.trim();
+  };
+  const appendUserMessage = async (content: string) => {
+    messages = withUserMessage(messages, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "user",
+        content,
+      },
+    });
+  };
+  const appendAssistantFinal = async (content: string) => {
+    messages = withAssistantFinalMessage(messages, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "assistant",
+        content,
+      },
+    });
+  };
+  const appendAssistantToolCallMessage = async (
+    content: string,
+    toolCalls: ReturnType<typeof getToolCalls>,
+  ) => {
+    messages = withAssistantToolCalls(messages, content, toolCalls);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "assistant",
+        content,
+        toolCallCount: toolCalls.length,
+      },
+    });
+  };
+  const appendToolMessage = async (toolCallId: string, content: unknown) => {
+    messages = withToolResult(messages, toolCallId, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "tool",
+        toolCallId,
+      },
+    });
+  };
 
-    if (!userInput) {
-      continue;
-    }
+  await hookDispatcher.dispatch({
+    name: "run.started",
+    payload: { model: currentModel },
+  });
+  await hookDispatcher.dispatch({
+    name: "session.started",
+    payload: { sessionId },
+  });
 
-    if (consumedSlashCommand) {
-      if (shouldExit) {
-        onExit?.();
-        return;
+  try {
+    while (true) {
+      let consumedSlashCommand = false;
+      let shouldExit = false;
+      const inputResult = await io.readUserInput("> ", {
+        commands: [
+          {
+            name: "help",
+            description: "Show slash command help",
+            callback: () => {
+              consumedSlashCommand = true;
+              for (const line of HELP_LINES) {
+                io.writeStatus(line);
+              }
+            },
+          },
+          {
+            name: "status",
+            description: "Show current session status",
+            callback: () => {
+              consumedSlashCommand = true;
+              const statusLines = formatStatus({
+                model: currentModel,
+                baseUrl: currentBaseUrl,
+                agentInstructionPath: config.agentInstructionPath,
+                configuredModelCount: configuredModelNames.length,
+                messageCount: messages.length,
+                lastUsage,
+                cumulativeUsage,
+                tokenLimit: resolveTokenLimit(currentModel),
+                workflowGateEnabled: chatWorkflowGateEnabled,
+                toolRuntimeSecurity: toolRuntime.getSecuritySummary?.() ?? null,
+              });
+              for (const line of statusLines) {
+                io.writeStatus(line);
+              }
+            },
+          },
+          {
+            name: "model",
+            description: "Show/change current model",
+            callback: async () => {
+              consumedSlashCommand = true;
+              if (configuredModelNames.length === 0) {
+                io.writeError(
+                  "[error] no models found in .agents/vibe-config.json",
+                );
+                return;
+              }
+
+              const selectableModels = [
+                currentModel,
+                ...configuredModelNames
+                  .filter((modelName) => modelName !== currentModel)
+                  .sort(),
+              ];
+              const requested = await io.selectModel(
+                selectableModels,
+                currentModel,
+              );
+
+              currentModel = requested;
+              currentBaseUrl = resolveBaseUrl(currentModel);
+              currentApiKey = resolveApiKey(currentModel);
+              lastUsage = null;
+              cumulativeUsage = createZeroUsage();
+              io.updateTokenStatus({
+                model: currentModel,
+                baseUrl: currentBaseUrl,
+                lastUsage,
+                cumulativeUsage,
+                tokenLimit: resolveTokenLimit(currentModel),
+              });
+              io.writeStatus(
+                `switched model to ${currentModel} (base_url=${currentBaseUrl})`,
+              );
+              void hookDispatcher.dispatch({
+                name: "session.state.changed",
+                phase: currentPhase,
+                payload: {
+                  key: "model",
+                  value: currentModel,
+                },
+              });
+            },
+          },
+          {
+            name: "workflow",
+            description: "Show/change chat workflow gate",
+            callback: (args) => {
+              consumedSlashCommand = true;
+              const action = args[0]?.toLowerCase() ?? "status";
+
+              if (action === "status") {
+                io.writeStatus(
+                  `chat workflow gate is ${chatWorkflowGateEnabled ? "on" : "off"}`,
+                );
+                return;
+              }
+
+              if (action === "on") {
+                chatWorkflowGateEnabled = true;
+                io.writeStatus("chat workflow gate enabled");
+                void hookDispatcher.dispatch({
+                  name: "session.state.changed",
+                  phase: currentPhase,
+                  payload: {
+                    key: "chatWorkflowGateEnabled",
+                    value: true,
+                  },
+                });
+                return;
+              }
+
+              if (action === "off") {
+                chatWorkflowGateEnabled = false;
+                io.writeStatus("chat workflow gate disabled");
+                void hookDispatcher.dispatch({
+                  name: "session.state.changed",
+                  phase: currentPhase,
+                  payload: {
+                    key: "chatWorkflowGateEnabled",
+                    value: false,
+                  },
+                });
+                return;
+              }
+
+              if (action === "toggle") {
+                chatWorkflowGateEnabled = !chatWorkflowGateEnabled;
+                io.writeStatus(
+                  `chat workflow gate ${chatWorkflowGateEnabled ? "enabled" : "disabled"}`,
+                );
+                void hookDispatcher.dispatch({
+                  name: "session.state.changed",
+                  phase: currentPhase,
+                  payload: {
+                    key: "chatWorkflowGateEnabled",
+                    value: chatWorkflowGateEnabled,
+                  },
+                });
+                return;
+              }
+
+              io.writeError("[error] usage: /workflow [status|on|off|toggle]");
+            },
+          },
+          {
+            name: "new",
+            description: "Start a new session",
+            callback: () => {
+              consumedSlashCommand = true;
+              messages = [{ role: "system", content: config.systemPrompt }];
+              lastUsage = null;
+              cumulativeUsage = createZeroUsage();
+              chatWorkflowGateEnabled = config.chatWorkflowGateEnabled;
+              sessionId = randomUUID();
+              io.resetSessionUiState();
+              io.updateTokenStatus({
+                model: currentModel,
+                baseUrl: currentBaseUrl,
+                lastUsage,
+                cumulativeUsage,
+                tokenLimit: resolveTokenLimit(currentModel),
+              });
+              io.writeStatus("started a new session");
+              void hookDispatcher.dispatch({
+                name: "session.reset",
+                payload: {},
+              });
+              void hookDispatcher.dispatch({
+                name: "session.started",
+                payload: { sessionId },
+              });
+            },
+          },
+          {
+            name: "exit",
+            description: "Exit the app",
+            callback: () => {
+              consumedSlashCommand = true;
+              shouldExit = true;
+              io.writeStatus("See you again!");
+            },
+          },
+          {
+            name: "quit",
+            description: "Exit the app (alias)",
+            callback: () => {
+              consumedSlashCommand = true;
+              shouldExit = true;
+              io.writeStatus("See you again!");
+            },
+          },
+        ] satisfies SlashCommand[],
+      });
+      const userInput = inputResult.value.trim();
+
+      if (!userInput) {
+        continue;
       }
-      continue;
-    }
 
-    if (userInput.startsWith("/")) {
-      io.writeError("[error] unknown slash command");
-      continue;
-    }
+      if (consumedSlashCommand) {
+        await hookDispatcher.dispatch({
+          name: "slash.executed",
+          phase: currentPhase,
+          payload: {
+            command: userInput.slice(1).split(/\s+/)[0] ?? "",
+            rawInput: userInput,
+          },
+        });
+        if (shouldExit) {
+          await hookDispatcher.dispatch({
+            name: "run.completed",
+            payload: { reason: "exit" },
+          });
+          onExit?.();
+          return;
+        }
+        continue;
+      }
 
-    try {
-      const mentionAttachments: MentionAttachment[] = [];
-      for (const path of inputResult.mentionedPaths) {
-        try {
-          const readResult = await io.runWithSpinner(
-            `[mention] reading ${path}`,
-            () =>
-              toolRuntime.invoke("read_file", {
+      if (userInput.startsWith("/")) {
+        io.writeError("[error] unknown slash command");
+        continue;
+      }
+
+      try {
+        await enterPhase("analyze");
+        const mentionAttachments: MentionAttachment[] = [];
+        for (const path of inputResult.mentionedPaths) {
+          try {
+            const readResult = await io.runWithSpinner(
+              `[mention] reading ${path}`,
+              () =>
+                toolRuntime.invoke("read_file", {
+                  path,
+                  start_line: 1,
+                  max_lines: config.mentionMaxLines,
+                }),
+            );
+
+            if (!isReadFileOutput(readResult)) {
+              mentionAttachments.push({
                 path,
-                start_line: 1,
-                max_lines: config.mentionMaxLines,
-              }),
-          );
+                content: "",
+                truncated: false,
+                error: "read_file returned unexpected payload",
+              });
+              continue;
+            }
 
-          if (!isReadFileOutput(readResult)) {
+            mentionAttachments.push({
+              path: readResult.path,
+              content: readResult.content,
+              truncated: readResult.truncated,
+              error: null,
+            });
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
             mentionAttachments.push({
               path,
               content: "",
               truncated: false,
-              error: "read_file returned unexpected payload",
+              error: message,
             });
-            continue;
           }
-
-          mentionAttachments.push({
-            path: readResult.path,
-            content: readResult.content,
-            truncated: readResult.truncated,
-            error: null,
-          });
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          mentionAttachments.push({
-            path,
-            content: "",
-            truncated: false,
-            error: message,
-          });
-        }
-      }
-
-      messages = withUserMessage(
-        messages,
-        buildMessageWithMentionAttachments(userInput, mentionAttachments),
-      );
-      const workflowGate = createWorkflowGate({
-        activated: false,
-        availableToolNames,
-      });
-
-      let printedFinal = false;
-
-      for (let round = 0; round < config.maxToolRounds; round++) {
-        io.writeStatus(
-          `thinking... (round ${round + 1}/${config.maxToolRounds})`,
-        );
-
-        const {
-          message: assistantMessage,
-          retriedWithRequired,
-          usage,
-        } = await io.runWithSpinner(
-          `[model] waiting (round ${round + 1}/${config.maxToolRounds})`,
-          () =>
-            requestAssistantMessage({
-              gateway: completionGateway,
-              baseUrl: currentBaseUrl,
-              apiKey: currentApiKey,
-              model: currentModel,
-              messages,
-              tools,
-              round,
-              enforceToolCallFirstRound: config.enforceToolCallFirstRound,
-            }),
-        );
-
-        if (usage) {
-          lastUsage = usage;
-          cumulativeUsage = addUsage(cumulativeUsage, usage);
-          io.updateTokenStatus({
-            model: currentModel,
-            baseUrl: currentBaseUrl,
-            lastUsage,
-            cumulativeUsage,
-            tokenLimit: resolveTokenLimit(currentModel),
-          });
         }
 
-        if (retriedWithRequired) {
+        await appendUserMessage(
+          buildMessageWithMentionAttachments(userInput, mentionAttachments),
+        );
+
+        let printedFinal = false;
+
+        for (let round = 0; round < config.maxToolRounds; round++) {
           io.writeStatus(
-            "no tool call in round 1, retrying with tool_choice=required",
+            `thinking... (round ${round + 1}/${config.maxToolRounds})`,
           );
-        }
+          await enterPhase("analyze", { round: round + 1 });
+          await hookDispatcher.dispatch({
+            name: "model.requested",
+            phase: currentPhase,
+            payload: {
+              round: round + 1,
+              model: currentModel,
+            },
+          });
 
-        if (!assistantMessage) {
-          io.writeStatus("assistant returned empty response");
-          printedFinal = true;
-          break;
-        }
-
-        const toolCalls = getToolCalls(assistantMessage);
-
-        if (toolCalls.length === 0) {
-          const assistantText = getAssistantContent(assistantMessage);
-          messages = withAssistantFinalMessage(messages, assistantText);
-
-          const continueMessage =
-            buildWorkflowFinalContinuationMessage(workflowGate);
-          if (continueMessage) {
-            io.writeStatus("workflow gate blocked final response");
-            messages = withUserMessage(messages, continueMessage);
-            continue;
-          }
-
-          if (!assistantText) {
-            io.writeStatus("assistant returned empty response");
-          } else {
-            io.writeOutput("");
-            io.writeOutput(assistantText);
-            io.writeOutput("");
-          }
-
-          printedFinal = true;
-          break;
-        }
-
-        if (chatWorkflowGateEnabled) {
-          activateWorkflowGate(workflowGate);
-        }
-        messages = withAssistantToolCalls(
-          messages,
-          getAssistantContent(assistantMessage),
-          toolCalls,
-        );
-
-        for (const toolCall of toolCalls) {
-          if (toolCall.type !== "function") {
-            continue;
-          }
-
-          const toolName = toolCall.function.name;
-
-          io.writeToolCall(toolName);
-          io.writeOutput(
-            toPreview(toolCall.function.arguments, config.maxPreviewChars),
-          );
-
-          const parsedArgs = parseToolArgs(toolCall.function.arguments);
-          if (!parsedArgs.ok) {
-            const failure = buildToolFailure(
-              "invalid_arguments_json",
-              parsedArgs.error,
-            );
-            messages = withToolResult(messages, toolCall.id, failure);
-            io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
-            continue;
-          }
-
-          if (!isToolAvailable(toolName, availableToolSet)) {
-            const unavailableMessage = buildToolUnavailableMessage(
-              toolName,
-              availableToolNames,
-            );
-            const failure = buildToolFailure(
-              "tool_not_available",
-              unavailableMessage,
-            );
-            messages = withToolResult(messages, toolCall.id, failure);
-            io.writeError(unavailableMessage);
-            continue;
-          }
-
-          try {
-            const preflightFailure = shouldBlockToolExecution(
-              workflowGate,
-              toolName,
-            );
-            if (preflightFailure) {
-              messages = withToolResult(
+          const {
+            message: assistantMessage,
+            retriedWithRequired,
+            usage,
+          } = await io.runWithSpinner(
+            `[model] waiting (round ${round + 1}/${config.maxToolRounds})`,
+            () =>
+              requestAssistantMessage({
+                gateway: completionGateway,
+                baseUrl: currentBaseUrl,
+                apiKey: currentApiKey,
+                model: currentModel,
                 messages,
-                toolCall.id,
-                preflightFailure,
-              );
-              io.writeError(
-                `workflow gate for ${toolName}: ${preflightFailure.message}`,
+                tools,
+                round,
+                enforceToolCallFirstRound: config.enforceToolCallFirstRound,
+              }),
+          );
+          await hookDispatcher.dispatch({
+            name: "model.responded",
+            phase: currentPhase,
+            payload: {
+              round: round + 1,
+              hasMessage: assistantMessage !== null,
+              retriedWithRequired,
+              toolCallCount: assistantMessage
+                ? getToolCalls(assistantMessage).length
+                : 0,
+            },
+          });
+
+          if (usage) {
+            lastUsage = usage;
+            cumulativeUsage = addUsage(cumulativeUsage, usage);
+            io.updateTokenStatus({
+              model: currentModel,
+              baseUrl: currentBaseUrl,
+              lastUsage,
+              cumulativeUsage,
+              tokenLimit: resolveTokenLimit(currentModel),
+            });
+          }
+
+          if (retriedWithRequired) {
+            io.writeStatus(
+              "no tool call in round 1, retrying with tool_choice=required",
+            );
+          }
+
+          if (!assistantMessage) {
+            io.writeStatus("assistant returned empty response");
+            printedFinal = true;
+            break;
+          }
+
+          const toolCalls = getToolCalls(assistantMessage);
+
+          if (toolCalls.length === 0) {
+            const assistantText = getAssistantContent(assistantMessage);
+            await appendAssistantFinal(assistantText);
+            await enterPhase("verify", { round: round + 1 });
+            const verifyDispatch = await hookDispatcher.dispatch({
+              name: "phase.check",
+              phase: "verify",
+              payload: { round: round + 1 },
+            });
+            if (verifyDispatch.decision) {
+              io.writeStatus("hook gate blocked verify phase");
+              await appendUserMessage(
+                buildHookContinuationMessage(verifyDispatch.decision),
               );
               continue;
             }
 
-            const result = await io.runWithSpinner(
-              `[tool] running ${toolName}`,
-              () => toolRuntime.invoke(toolName, parsedArgs.value),
+            await enterPhase("done", { round: round + 1 });
+            const doneDispatch = await hookDispatcher.dispatch({
+              name: "phase.check",
+              phase: "done",
+              payload: { round: round + 1 },
+            });
+            if (doneDispatch.decision) {
+              io.writeStatus("hook gate blocked final response");
+              await appendUserMessage(
+                buildHookContinuationMessage(doneDispatch.decision),
+              );
+              continue;
+            }
+
+            if (!assistantText) {
+              io.writeStatus("assistant returned empty response");
+            } else {
+              io.writeOutput("");
+              io.writeOutput(assistantText);
+              io.writeOutput("");
+            }
+
+            printedFinal = true;
+            break;
+          }
+
+          if (chatWorkflowGateEnabled) {
+            activateWorkflowGate(workflowGate);
+          }
+          await enterPhase("execute", { round: round + 1 });
+          await appendAssistantToolCallMessage(
+            getAssistantContent(assistantMessage),
+            toolCalls,
+          );
+
+          for (const toolCall of toolCalls) {
+            if (toolCall.type !== "function") {
+              continue;
+            }
+
+            const toolName = toolCall.function.name;
+            await hookDispatcher.dispatch({
+              name: "tool.call.started",
+              phase: currentPhase,
+              payload: {
+                toolName,
+                toolCallId: toolCall.id,
+              },
+            });
+
+            io.writeToolCall(toolName);
+            io.writeOutput(
+              toPreview(toolCall.function.arguments, config.maxPreviewChars),
             );
-            messages = withToolResult(messages, toolCall.id, result);
-            io.writeStatus(`response from ${toolName}`);
-            io.writeOutput(toPreview(result, config.maxPreviewChars));
-            if (
-              typeof result === "object" &&
-              result !== null &&
-              "status" in result &&
-              result.status === "success" &&
-              "data" in result &&
-              typeof result.data === "object" &&
-              result.data !== null
-            ) {
-              recordWorkflowToolSuccess(
+
+            const parsedArgs = parseToolArgs(toolCall.function.arguments);
+            if (!parsedArgs.ok) {
+              const failure = buildToolFailure(
+                "invalid_arguments_json",
+                parsedArgs.error,
+              );
+              await appendToolMessage(toolCall.id, failure);
+              io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
+              await hookDispatcher.dispatch({
+                name: "tool.call.completed",
+                phase: currentPhase,
+                payload: {
+                  toolName,
+                  toolCallId: toolCall.id,
+                  status: "invalid",
+                },
+              });
+              continue;
+            }
+
+            if (!isToolAvailable(toolName, availableToolSet)) {
+              const unavailableMessage = buildToolUnavailableMessage(
+                toolName,
+                availableToolNames,
+              );
+              const failure = buildToolFailure(
+                "tool_not_available",
+                unavailableMessage,
+              );
+              await appendToolMessage(toolCall.id, failure);
+              io.writeError(unavailableMessage);
+              await hookDispatcher.dispatch({
+                name: "tool.call.completed",
+                phase: currentPhase,
+                payload: {
+                  toolName,
+                  toolCallId: toolCall.id,
+                  status: "unavailable",
+                },
+              });
+              continue;
+            }
+
+            try {
+              const preflightFailure = shouldBlockToolExecution(
                 workflowGate,
                 toolName,
-                result.data as Record<string, unknown>,
               );
-            }
-          } catch (error) {
-            let failureReason:
-              | "tool_invoke_error"
-              | "security_bypass_declined" = "tool_invoke_error";
-            let invokeError =
-              error instanceof Error ? error.message : String(error);
-
-            if (isSecurityRestrictedInvokeError(error)) {
-              const shouldBypass = await io.selectSecurityBypass(
-                toolName,
-                invokeError,
-              );
-
-              if (shouldBypass) {
-                io.writeStatus(`retrying ${toolName} with SecurityBypass`);
-                try {
-                  const bypassedResult = await io.runWithSpinner(
-                    `[tool] running ${toolName} (SecurityBypass)`,
-                    () =>
-                      toolRuntime.invoke(toolName, parsedArgs.value, {
-                        securityBypass: true,
-                      }),
-                  );
-                  messages = withToolResult(
-                    messages,
-                    toolCall.id,
-                    bypassedResult,
-                  );
-                  io.writeStatus(`response from ${toolName}`);
-                  io.writeOutput(
-                    toPreview(bypassedResult, config.maxPreviewChars),
-                  );
-                  if (
-                    typeof bypassedResult === "object" &&
-                    bypassedResult !== null &&
-                    "status" in bypassedResult &&
-                    bypassedResult.status === "success" &&
-                    "data" in bypassedResult &&
-                    typeof bypassedResult.data === "object" &&
-                    bypassedResult.data !== null
-                  ) {
-                    recordWorkflowToolSuccess(
-                      workflowGate,
-                      toolName,
-                      bypassedResult.data as Record<string, unknown>,
-                    );
-                  }
-                  continue;
-                } catch (retryError) {
-                  invokeError =
-                    retryError instanceof Error
-                      ? retryError.message
-                      : String(retryError);
-                }
-              } else {
-                failureReason = "security_bypass_declined";
-                invokeError = buildSecurityBypassDeclinedMessage(toolName);
+              if (preflightFailure) {
+                await appendToolMessage(toolCall.id, preflightFailure);
+                io.writeError(
+                  `workflow gate for ${toolName}: ${preflightFailure.message}`,
+                );
+                await hookDispatcher.dispatch({
+                  name: "tool.call.completed",
+                  phase: currentPhase,
+                  payload: {
+                    toolName,
+                    toolCallId: toolCall.id,
+                    status: "blocked",
+                  },
+                });
+                continue;
               }
-            }
 
-            const failure = buildToolFailure(failureReason, invokeError);
-            messages = withToolResult(messages, toolCall.id, failure);
-            io.writeError(`error from ${toolName}: ${invokeError}`);
+              const result = await io.runWithSpinner(
+                `[tool] running ${toolName}`,
+                () => toolRuntime.invoke(toolName, parsedArgs.value),
+              );
+              await appendToolMessage(toolCall.id, result);
+              io.writeStatus(`response from ${toolName}`);
+              io.writeOutput(toPreview(result, config.maxPreviewChars));
+              await hookDispatcher.dispatch({
+                name: "tool.call.completed",
+                phase: currentPhase,
+                payload: {
+                  toolName,
+                  toolCallId: toolCall.id,
+                  status: "success",
+                },
+              });
+              if (
+                typeof result === "object" &&
+                result !== null &&
+                "status" in result &&
+                result.status === "success" &&
+                "data" in result &&
+                typeof result.data === "object" &&
+                result.data !== null
+              ) {
+                recordWorkflowToolSuccess(
+                  workflowGate,
+                  toolName,
+                  result.data as Record<string, unknown>,
+                );
+              }
+            } catch (error) {
+              let failureReason:
+                | "tool_invoke_error"
+                | "security_bypass_declined" = "tool_invoke_error";
+              let invokeError =
+                error instanceof Error ? error.message : String(error);
+
+              if (isSecurityRestrictedInvokeError(error)) {
+                const shouldBypass = await io.selectSecurityBypass(
+                  toolName,
+                  invokeError,
+                );
+
+                if (shouldBypass) {
+                  io.writeStatus(`retrying ${toolName} with SecurityBypass`);
+                  try {
+                    const bypassedResult = await io.runWithSpinner(
+                      `[tool] running ${toolName} (SecurityBypass)`,
+                      () =>
+                        toolRuntime.invoke(toolName, parsedArgs.value, {
+                          securityBypass: true,
+                        }),
+                    );
+                    await appendToolMessage(toolCall.id, bypassedResult);
+                    io.writeStatus(`response from ${toolName}`);
+                    io.writeOutput(
+                      toPreview(bypassedResult, config.maxPreviewChars),
+                    );
+                    await hookDispatcher.dispatch({
+                      name: "tool.call.completed",
+                      phase: currentPhase,
+                      payload: {
+                        toolName,
+                        toolCallId: toolCall.id,
+                        status: "success",
+                        securityBypass: true,
+                      },
+                    });
+                    if (
+                      typeof bypassedResult === "object" &&
+                      bypassedResult !== null &&
+                      "status" in bypassedResult &&
+                      bypassedResult.status === "success" &&
+                      "data" in bypassedResult &&
+                      typeof bypassedResult.data === "object" &&
+                      bypassedResult.data !== null
+                    ) {
+                      recordWorkflowToolSuccess(
+                        workflowGate,
+                        toolName,
+                        bypassedResult.data as Record<string, unknown>,
+                      );
+                    }
+                    continue;
+                  } catch (retryError) {
+                    invokeError =
+                      retryError instanceof Error
+                        ? retryError.message
+                        : String(retryError);
+                  }
+                } else {
+                  failureReason = "security_bypass_declined";
+                  invokeError = buildSecurityBypassDeclinedMessage(toolName);
+                }
+              }
+
+              const failure = buildToolFailure(failureReason, invokeError);
+              await appendToolMessage(toolCall.id, failure);
+              io.writeError(`error from ${toolName}: ${invokeError}`);
+              await hookDispatcher.dispatch({
+                name: "tool.call.completed",
+                phase: currentPhase,
+                payload: {
+                  toolName,
+                  toolCallId: toolCall.id,
+                  status:
+                    failureReason === "security_bypass_declined"
+                      ? "blocked"
+                      : "error",
+                },
+              });
+            }
           }
         }
-      }
 
-      if (!printedFinal) {
-        io.writeStatus(
-          `tool loop reached max rounds (${config.maxToolRounds}).`,
-        );
+        if (!printedFinal) {
+          io.writeStatus(
+            `tool loop reached max rounds (${config.maxToolRounds}).`,
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        io.writeError(`Request failed: ${message}`);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      io.writeError(`Request failed: ${message}`);
     }
+  } catch (error) {
+    await hookDispatcher.dispatch({
+      name: "run.failed",
+      phase: currentPhase,
+      payload: {
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  } finally {
+    await hookDispatcher.dispose();
   }
 }

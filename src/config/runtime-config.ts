@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
-import type { RuntimeConfig } from "../domain/types";
+import type {
+  HookConfigEntry,
+  HookPhaseFilter,
+  RuntimeConfig,
+} from "../domain/types";
 import {
   loadVibeConfigFile,
   resolveConfigRelativeFileCandidates,
@@ -30,6 +34,7 @@ interface LoadedVibeModelConfig {
   apiKeys: ModelStringMap;
   instructionFile: string | null;
   configDirectory: string;
+  hooks: HookConfigEntry[];
 }
 interface LoadedAgentInstruction {
   content: string | null;
@@ -66,6 +71,60 @@ function readBoolean(
   return typeof value === "boolean" ? value : null;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readHookPhaseFilter(value: unknown): HookPhaseFilter | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const phases: HookPhaseFilter = {};
+  if (typeof value.analyze === "boolean") {
+    phases.analyze = value.analyze;
+  }
+  if (typeof value.execute === "boolean") {
+    phases.execute = value.execute;
+  }
+  if (typeof value.verify === "boolean") {
+    phases.verify = value.verify;
+  }
+  if (typeof value.done === "boolean") {
+    phases.done = value.done;
+  }
+
+  return Object.keys(phases).length > 0 ? phases : null;
+}
+
+function readHookConfigEntries(
+  parsed: Record<string, unknown>,
+): HookConfigEntry[] {
+  const hooksRaw = parsed.hooks;
+  if (!isRecord(hooksRaw)) {
+    return [];
+  }
+
+  const hooks: HookConfigEntry[] = [];
+  for (const [hookName, value] of Object.entries(hooksRaw)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+
+    const onError = value.on_error === "abort" ? "abort" : "warn";
+    const phases = readHookPhaseFilter(value.phases);
+    const config = isRecord(value.config) ? value.config : {};
+    hooks.push({
+      hookName,
+      onError,
+      phases,
+      config,
+    });
+  }
+
+  return hooks;
+}
+
 function loadVibeModelConfig(
   cwd: string,
   configFilePath: string | null = null,
@@ -87,6 +146,7 @@ function loadVibeModelConfig(
       apiKeys: {},
       instructionFile: null,
       configDirectory: loaded.directory,
+      hooks: [],
     };
   }
 
@@ -123,6 +183,7 @@ function loadVibeModelConfig(
       apiKeys: {},
       instructionFile,
       configDirectory: loaded.directory,
+      hooks: readHookConfigEntries(parsed),
     };
   }
 
@@ -177,6 +238,7 @@ function loadVibeModelConfig(
     apiKeys,
     instructionFile,
     configDirectory: loaded.directory,
+    hooks: readHookConfigEntries(parsed),
   };
 }
 
@@ -299,6 +361,8 @@ export function loadAppConfig(
         : loadedSystemPrompt.content;
 
   return {
+    workspaceRoot: cwd,
+    configDirectory: loaded.configDirectory,
     baseUrl: DEFAULT_BASE_URL,
     apiKey: DEFAULT_API_KEY,
     model,
@@ -314,5 +378,6 @@ export function loadAppConfig(
     mentionMaxLines: loaded.mentionMaxLines ?? DEFAULT_MENTION_MAX_LINES,
     chatWorkflowGateEnabled:
       loaded.chatWorkflowGateEnabled ?? DEFAULT_CHAT_WORKFLOW_GATE_ENABLED,
+    hooks: loaded.hooks,
   };
 }

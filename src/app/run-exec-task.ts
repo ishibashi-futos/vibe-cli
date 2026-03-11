@@ -25,11 +25,13 @@ import {
   requestAssistantMessage,
 } from "./chat-orchestrator";
 import {
-  buildWorkflowFinalContinuationMessage,
   createWorkflowGate,
   recordWorkflowToolSuccess,
   shouldBlockToolExecution,
 } from "../domain/workflow-gate";
+import { buildHookContinuationMessage } from "../hooks/continuation-message";
+import { createHookDispatcher } from "../hooks/dispatcher";
+import type { HookPhase } from "../domain/types";
 
 const EXEC_DONE_TOKEN = "<EXEC_DONE />";
 const EXEC_SUMMARY_START = "<EXEC_SUMMARY>";
@@ -135,6 +137,14 @@ export async function runExecTask({
     activated: true,
     availableToolNames,
   });
+  let currentPhase: HookPhase | undefined;
+  const hookDispatcher = await createHookDispatcher({
+    config,
+    mode: "exec",
+    workflowGate,
+    getSessionId: () => null,
+    logger: io,
+  });
 
   const model = config.model;
   const baseUrl = config.modelBaseUrls[model] ?? config.baseUrl;
@@ -149,172 +159,352 @@ export async function runExecTask({
 
   io.writeStatus(`[exec] started. model=${model}`);
   io.writeStatus(`[exec] base_url=${baseUrl}`);
+  await hookDispatcher.dispatch({ name: "run.started", payload: { model } });
+  await hookDispatcher.dispatch({
+    name: "message.appended",
+    payload: {
+      role: "user",
+      content: instruction,
+    },
+  });
 
-  for (let round = 0; round < config.maxToolRounds; round += 1) {
-    io.writeStatus(
-      `[exec] thinking... (round ${round + 1}/${config.maxToolRounds})`,
-    );
-
-    const {
-      message: assistantMessage,
-      retriedWithRequired,
-      usage,
-    } = await requestAssistantMessage({
-      gateway: completionGateway,
-      baseUrl,
-      apiKey,
-      model,
-      messages,
-      tools,
-      round,
-      enforceToolCallFirstRound: config.enforceToolCallFirstRound,
+  const enterPhase = async (
+    phase: HookPhase,
+    payload?: Record<string, unknown>,
+  ) => {
+    currentPhase = phase;
+    await hookDispatcher.dispatch({
+      name: "phase.entered",
+      phase,
+      payload,
     });
+  };
+  const appendUserMessage = async (content: string) => {
+    messages = withUserMessage(messages, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "user",
+        content,
+      },
+    });
+  };
+  const appendAssistantFinal = async (content: string) => {
+    messages = withAssistantFinalMessage(messages, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "assistant",
+        content,
+      },
+    });
+  };
+  const appendAssistantTools = async (
+    content: string,
+    toolCalls: ReturnType<typeof getToolCalls>,
+  ) => {
+    messages = withAssistantToolCalls(messages, content, toolCalls);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "assistant",
+        content,
+        toolCallCount: toolCalls.length,
+      },
+    });
+  };
+  const appendToolMessage = async (toolCallId: string, content: unknown) => {
+    messages = withToolResult(messages, toolCallId, content);
+    await hookDispatcher.dispatch({
+      name: "message.appended",
+      phase: currentPhase,
+      payload: {
+        role: "tool",
+        toolCallId,
+      },
+    });
+  };
 
-    cumulativeUsage = addUsage(cumulativeUsage, usage);
-    if (retriedWithRequired) {
+  try {
+    for (let round = 0; round < config.maxToolRounds; round += 1) {
       io.writeStatus(
-        "[exec] no tool call in round 1, retried with tool_choice=required",
+        `[exec] thinking... (round ${round + 1}/${config.maxToolRounds})`,
       );
-    }
+      await enterPhase("analyze", { round: round + 1 });
+      await hookDispatcher.dispatch({
+        name: "model.requested",
+        phase: currentPhase,
+        payload: {
+          round: round + 1,
+          model,
+        },
+      });
 
-    if (!assistantMessage) {
-      io.writeError("[exec] assistant returned empty response");
-      return { success: false, exitCode: 1 };
-    }
+      const {
+        message: assistantMessage,
+        retriedWithRequired,
+        usage,
+      } = await requestAssistantMessage({
+        gateway: completionGateway,
+        baseUrl,
+        apiKey,
+        model,
+        messages,
+        tools,
+        round,
+        enforceToolCallFirstRound: config.enforceToolCallFirstRound,
+      });
+      await hookDispatcher.dispatch({
+        name: "model.responded",
+        phase: currentPhase,
+        payload: {
+          round: round + 1,
+          hasMessage: assistantMessage !== null,
+          retriedWithRequired,
+          toolCallCount: assistantMessage
+            ? getToolCalls(assistantMessage).length
+            : 0,
+        },
+      });
 
-    const toolCalls = getToolCalls(assistantMessage);
-    if (toolCalls.length === 0) {
-      const assistantText = getAssistantContent(assistantMessage);
-      messages = withAssistantFinalMessage(messages, assistantText);
-
-      const continueMessage =
-        buildWorkflowFinalContinuationMessage(workflowGate);
-      if (continueMessage) {
-        io.writeStatus("[exec] workflow gate blocked final response");
-        messages = withUserMessage(messages, continueMessage);
-        continue;
-      }
-
-      if (!hasDoneToken(assistantText)) {
-        if (missingDoneTokenRetries < MAX_MISSING_DONE_TOKEN_RETRIES) {
-          missingDoneTokenRetries += 1;
-          io.writeStatus(
-            `[exec] assistant response missing completion token ${EXEC_DONE_TOKEN}; continuing`,
-          );
-          messages = withUserMessage(
-            messages,
-            `Continue until fully complete. Return the final answer with the exact token ${EXEC_DONE_TOKEN}.`,
-          );
-          continue;
-        }
-
+      cumulativeUsage = addUsage(cumulativeUsage, usage);
+      if (retriedWithRequired) {
         io.writeStatus(
-          `[exec] completion token still missing after ${MAX_MISSING_DONE_TOKEN_RETRIES} retry; forcing completion output`,
+          "[exec] no tool call in round 1, retried with tool_choice=required",
         );
       }
 
-      io.writeStatus("[exec] completed");
-      io.writeStatus(
-        `[exec] tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
-      );
-
-      const summary = extractSummary(assistantText);
-      io.writeOutput(EXEC_SUMMARY_START);
-      if (summary.length > 0) {
-        io.writeOutput(summary);
-      }
-      io.writeOutput(EXEC_SUMMARY_END);
-      io.writeOutput(EXEC_DONE_TOKEN);
-
-      return { success: true, exitCode: 0 };
-    }
-
-    messages = withAssistantToolCalls(
-      messages,
-      getAssistantContent(assistantMessage),
-      toolCalls,
-    );
-
-    for (const toolCall of toolCalls) {
-      if (toolCall.type !== "function") {
-        continue;
+      if (!assistantMessage) {
+        io.writeError("[exec] assistant returned empty response");
+        return { success: false, exitCode: 1 };
       }
 
-      const toolName = toolCall.function.name;
-      io.writeToolCall(toolName);
-      io.writeOutput(
-        toPreview(toolCall.function.arguments, config.maxPreviewChars),
-      );
+      const toolCalls = getToolCalls(assistantMessage);
+      if (toolCalls.length === 0) {
+        const assistantText = getAssistantContent(assistantMessage);
+        await appendAssistantFinal(assistantText);
 
-      const parsedArgs = parseToolArgs(toolCall.function.arguments);
-      if (!parsedArgs.ok) {
-        const failure = buildToolFailure(
-          "invalid_arguments_json",
-          parsedArgs.error,
-        );
-        messages = withToolResult(messages, toolCall.id, failure);
-        io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
-        continue;
-      }
-
-      if (!isToolAvailable(toolName, availableToolSet)) {
-        const unavailableMessage = buildToolUnavailableMessage(
-          toolName,
-          availableToolNames,
-        );
-        const failure = buildToolFailure(
-          "tool_not_available",
-          unavailableMessage,
-        );
-        messages = withToolResult(messages, toolCall.id, failure);
-        io.writeError(unavailableMessage);
-        continue;
-      }
-
-      try {
-        const preflightFailure = shouldBlockToolExecution(
-          workflowGate,
-          toolName,
-        );
-        if (preflightFailure) {
-          messages = withToolResult(messages, toolCall.id, preflightFailure);
-          io.writeError(
-            `workflow gate for ${toolName}: ${preflightFailure.message}`,
+        await enterPhase("verify", { round: round + 1 });
+        const verifyDispatch = await hookDispatcher.dispatch({
+          name: "phase.check",
+          phase: "verify",
+          payload: { round: round + 1 },
+        });
+        if (verifyDispatch.decision) {
+          io.writeStatus("[exec] hook gate blocked verify phase");
+          await appendUserMessage(
+            buildHookContinuationMessage(verifyDispatch.decision),
           );
           continue;
         }
 
-        const result = await toolRuntime.invoke(toolName, parsedArgs.value);
-        messages = withToolResult(messages, toolCall.id, result);
-        io.writeStatus(`response from ${toolName}`);
-        io.writeOutput(toPreview(result, config.maxPreviewChars));
-        if (
-          typeof result === "object" &&
-          result !== null &&
-          "status" in result &&
-          result.status === "success" &&
-          "data" in result &&
-          typeof result.data === "object" &&
-          result.data !== null
-        ) {
-          recordWorkflowToolSuccess(
+        await enterPhase("done", { round: round + 1 });
+        const doneDispatch = await hookDispatcher.dispatch({
+          name: "phase.check",
+          phase: "done",
+          payload: { round: round + 1 },
+        });
+        if (doneDispatch.decision) {
+          io.writeStatus("[exec] hook gate blocked final response");
+          await appendUserMessage(
+            buildHookContinuationMessage(doneDispatch.decision),
+          );
+          continue;
+        }
+
+        if (!hasDoneToken(assistantText)) {
+          if (missingDoneTokenRetries < MAX_MISSING_DONE_TOKEN_RETRIES) {
+            missingDoneTokenRetries += 1;
+            io.writeStatus(
+              `[exec] assistant response missing completion token ${EXEC_DONE_TOKEN}; continuing`,
+            );
+            messages = withUserMessage(
+              messages,
+              `Continue until fully complete. Return the final answer with the exact token ${EXEC_DONE_TOKEN}.`,
+            );
+            continue;
+          }
+
+          io.writeStatus(
+            `[exec] completion token still missing after ${MAX_MISSING_DONE_TOKEN_RETRIES} retry; forcing completion output`,
+          );
+        }
+
+        io.writeStatus("[exec] completed");
+        io.writeStatus(
+          `[exec] tokens(total) prompt=${cumulativeUsage.prompt_tokens} completion=${cumulativeUsage.completion_tokens} total=${cumulativeUsage.total_tokens}`,
+        );
+
+        const summary = extractSummary(assistantText);
+        io.writeOutput(EXEC_SUMMARY_START);
+        if (summary.length > 0) {
+          io.writeOutput(summary);
+        }
+        io.writeOutput(EXEC_SUMMARY_END);
+        io.writeOutput(EXEC_DONE_TOKEN);
+        await hookDispatcher.dispatch({ name: "run.completed", payload: {} });
+
+        return { success: true, exitCode: 0 };
+      }
+
+      await enterPhase("execute", { round: round + 1 });
+      await appendAssistantTools(
+        getAssistantContent(assistantMessage),
+        toolCalls,
+      );
+
+      for (const toolCall of toolCalls) {
+        if (toolCall.type !== "function") {
+          continue;
+        }
+
+        const toolName = toolCall.function.name;
+        await hookDispatcher.dispatch({
+          name: "tool.call.started",
+          phase: currentPhase,
+          payload: {
+            toolName,
+            toolCallId: toolCall.id,
+          },
+        });
+        io.writeToolCall(toolName);
+        io.writeOutput(
+          toPreview(toolCall.function.arguments, config.maxPreviewChars),
+        );
+
+        const parsedArgs = parseToolArgs(toolCall.function.arguments);
+        if (!parsedArgs.ok) {
+          const failure = buildToolFailure(
+            "invalid_arguments_json",
+            parsedArgs.error,
+          );
+          await appendToolMessage(toolCall.id, failure);
+          io.writeError(`invalid arguments JSON: ${parsedArgs.error}`);
+          await hookDispatcher.dispatch({
+            name: "tool.call.completed",
+            phase: currentPhase,
+            payload: {
+              toolName,
+              toolCallId: toolCall.id,
+              status: "invalid",
+            },
+          });
+          continue;
+        }
+
+        if (!isToolAvailable(toolName, availableToolSet)) {
+          const unavailableMessage = buildToolUnavailableMessage(
+            toolName,
+            availableToolNames,
+          );
+          const failure = buildToolFailure(
+            "tool_not_available",
+            unavailableMessage,
+          );
+          await appendToolMessage(toolCall.id, failure);
+          io.writeError(unavailableMessage);
+          await hookDispatcher.dispatch({
+            name: "tool.call.completed",
+            phase: currentPhase,
+            payload: {
+              toolName,
+              toolCallId: toolCall.id,
+              status: "unavailable",
+            },
+          });
+          continue;
+        }
+
+        try {
+          const preflightFailure = shouldBlockToolExecution(
             workflowGate,
             toolName,
-            result.data as Record<string, unknown>,
           );
+          if (preflightFailure) {
+            await appendToolMessage(toolCall.id, preflightFailure);
+            io.writeError(
+              `workflow gate for ${toolName}: ${preflightFailure.message}`,
+            );
+            await hookDispatcher.dispatch({
+              name: "tool.call.completed",
+              phase: currentPhase,
+              payload: {
+                toolName,
+                toolCallId: toolCall.id,
+                status: "blocked",
+              },
+            });
+            continue;
+          }
+
+          const result = await toolRuntime.invoke(toolName, parsedArgs.value);
+          await appendToolMessage(toolCall.id, result);
+          io.writeStatus(`response from ${toolName}`);
+          io.writeOutput(toPreview(result, config.maxPreviewChars));
+          await hookDispatcher.dispatch({
+            name: "tool.call.completed",
+            phase: currentPhase,
+            payload: {
+              toolName,
+              toolCallId: toolCall.id,
+              status: "success",
+            },
+          });
+          if (
+            typeof result === "object" &&
+            result !== null &&
+            "status" in result &&
+            result.status === "success" &&
+            "data" in result &&
+            typeof result.data === "object" &&
+            result.data !== null
+          ) {
+            recordWorkflowToolSuccess(
+              workflowGate,
+              toolName,
+              result.data as Record<string, unknown>,
+            );
+          }
+        } catch (error) {
+          const invokeError =
+            error instanceof Error ? error.message : String(error);
+          const failure = buildToolFailure("tool_invoke_error", invokeError);
+          await appendToolMessage(toolCall.id, failure);
+          io.writeError(`error from ${toolName}: ${invokeError}`);
+          await hookDispatcher.dispatch({
+            name: "tool.call.completed",
+            phase: currentPhase,
+            payload: {
+              toolName,
+              toolCallId: toolCall.id,
+              status: "error",
+            },
+          });
         }
-      } catch (error) {
-        const invokeError =
-          error instanceof Error ? error.message : String(error);
-        const failure = buildToolFailure("tool_invoke_error", invokeError);
-        messages = withToolResult(messages, toolCall.id, failure);
-        io.writeError(`error from ${toolName}: ${invokeError}`);
       }
     }
+  } catch (error) {
+    await hookDispatcher.dispatch({
+      name: "run.failed",
+      phase: currentPhase,
+      payload: {
+        message: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  } finally {
+    await hookDispatcher.dispose();
   }
 
   io.writeError(
     `[exec] reached max rounds without final answer (${config.maxToolRounds})`,
   );
+  await hookDispatcher.dispatch({
+    name: "run.completed",
+    payload: { success: false },
+  });
   return { success: false, exitCode: 1 };
 }
